@@ -1,6 +1,4 @@
-# Using Python to write the file since we're having issues with shell commands
-with open('README.md', 'w') as f:
-    f.write("""# AI Browser Control Demo
+# AI Browser Control Demo
 
 A demonstration of AI-powered browser automation using browser-use. This demo shows how AI agents can control web browsers to perform tasks like writing documents and conducting research.
 
@@ -63,4 +61,4 @@ For macOS/Linux:
 ## Credits
 
 Created by Versantus
-Using browser-use - Enable AI to control your browser""")
+Using browser-use - Enable AI to control your browser
