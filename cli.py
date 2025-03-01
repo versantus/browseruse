@@ -2,7 +2,7 @@
 import os
 import asyncio
 import argparse
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
@@ -38,11 +38,11 @@ async def run_research(
     prompt: str, 
     headless: bool = True, 
     disable_security: bool = True,
-    extra_chromium_args: List[str] = None,
-    chrome_path: str = None, 
-    wss_url: str = None, 
-    cdp_url: str = None,
-    proxy: str = None,
+    extra_chromium_args: Optional[List[str]] = None,
+    chrome_path: Optional[str] = None, 
+    wss_url: Optional[str] = None, 
+    cdp_url: Optional[str] = None,
+    proxy: Optional[str] = None,
     connect_existing: bool = False,
     embedded_browser: bool = False,
     stealth_mode: bool = True  # Stealth mode enabled by default
@@ -101,7 +101,7 @@ async def run_research(
                 print(f"If connection fails, try manually setting --cdp-url=http://localhost:{debug_port}/json/version")
                 
                 cdp_url = f"http://{hostname}:{debug_port}/json/version"
-                chrome_path = None  # Don't use chrome_path anymore since we're using CDP
+                chrome_path = ""  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
                 print(f"Error starting Chrome: {e}")
     
