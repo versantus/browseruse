@@ -141,13 +141,11 @@ function App() {
         ? updatedFormData.extraChromiumArgs.split(',').map(arg => arg.trim())
         : [];
 
-      // Show the embedded browser only if not using local browser
-      setBrowserVisible(!formData.useLocalBrowser);
+      // Always show the embedded browser
+      setBrowserVisible(true);
       
-      if (!formData.useLocalBrowser) {
-        // Set the browser URL to the embedded browser endpoint
-        setBrowserUrl(`http://${apiHost}:${apiPort}/embedded-browser`);
-      }
+      // Set the browser URL to the embedded browser endpoint
+      setBrowserUrl(`http://${apiHost}:${apiPort}/embedded-browser`);
       
       // Add initial CLI output
       addCliOutput(`Starting research: "${formData.prompt}"`);
@@ -269,10 +267,16 @@ function App() {
             )}
           </div>
           
-          {/* Browser Container - Only shown when research is in progress and not using local browser */}
+          {/* Browser Container - Always shown when research is in progress */}
           {browserVisible && (
             <div className="browser-container">
-              <h2>Embedded Browser</h2>
+              <h2>{formData.useLocalBrowser ? "Local Browser View" : "Embedded Browser"}</h2>
+              {formData.useLocalBrowser && (
+                <div className="local-browser-message">
+                  <p>Research is being conducted in your local browser.</p>
+                  <p>You can see a live view of the browser below.</p>
+                </div>
+              )}
               <Iframe
                 url={browserUrl}
                 width="100%"
@@ -283,18 +287,6 @@ function App() {
                 position="relative"
                 allowFullScreen
               />
-            </div>
-          )}
-          
-          {/* Local Browser Message - Only shown when using local browser */}
-          {!browserVisible && isLoading && formData.useLocalBrowser && (
-            <div className="browser-container">
-              <h2>Using Local Browser</h2>
-              <div className="local-browser-message">
-                <p>Research is being conducted in your local browser.</p>
-                <p>Check your browser window to see the research in progress.</p>
-                <p>Results will appear here when the research is complete.</p>
-              </div>
             </div>
           )}
           

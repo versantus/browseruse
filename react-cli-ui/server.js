@@ -336,8 +336,8 @@ app.post('/api/run-research', async (req, res) => {
   let dataOutput = '';
   let errorOutput = '';
   
-  // If using embedded browser and not using local browser, try to connect to CDP
-  if (req.body.useEmbeddedBrowser && !useLocalBrowser) {
+  // Always try to connect to CDP for screenshots, whether using embedded or local browser
+  if (req.body.useEmbeddedBrowser || useLocalBrowser) {
     // Wait a moment for the browser to start
     setTimeout(async () => {
       try {
@@ -348,6 +348,8 @@ app.post('/api/run-research', async (req, res) => {
         // If we're running in headless mode on a server, let the user know
         if (process.env.SERVER_ENVIRONMENT === 'true') {
           broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
+        } else if (useLocalBrowser) {
+          broadcastCliOutput("Connected to local browser. Screenshots will be captured and displayed in the iframe.");
         }
       } catch (error) {
         console.error('Error connecting to browser:', error);
