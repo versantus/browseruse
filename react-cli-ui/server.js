@@ -292,9 +292,21 @@ app.post('/api/run-research', async (req, res) => {
         // This will start the screenshot capture process
         await connectToCDP(9222);
         broadcastCliOutput("Connected to browser for screenshots");
+        
+        // If we're running in headless mode on a server, let the user know
+        if (process.env.SERVER_ENVIRONMENT === 'true') {
+          broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
+        }
       } catch (error) {
         console.error('Error connecting to browser:', error);
         broadcastCliOutput(`Error connecting to browser: ${error.message}`);
+        
+        // If we're running on a server, provide additional troubleshooting info
+        if (process.env.SERVER_ENVIRONMENT === 'true') {
+          broadcastCliOutput("Note: When running on a Linux server without a display, the browser runs in headless mode.");
+          broadcastCliOutput("Screenshots should still be captured and displayed in the iframe.");
+          broadcastCliOutput("If no screenshots appear, check that the browser is properly initialized with --headless=new flag.");
+        }
       }
     }, 3000); // Wait 3 seconds for the browser to initialize
   }
