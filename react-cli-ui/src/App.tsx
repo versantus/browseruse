@@ -110,6 +110,10 @@ function App() {
     setError(null);
     setCliOutput([]);
     
+    // Get the current hostname and port for API requests
+    const apiHost = window.location.hostname;
+    const apiPort = '3002'; // API server always runs on port 3002
+    
     // Always set noHeadless to true when using embedded browser
     const updatedFormData = {
       ...formData,
@@ -126,14 +130,14 @@ function App() {
       setBrowserVisible(true);
       
       // Set the browser URL to the embedded browser endpoint
-      setBrowserUrl('http://localhost:3002/embedded-browser');
+      setBrowserUrl(`http://${apiHost}:${apiPort}/embedded-browser`);
       
       // Add initial CLI output
       addCliOutput(`Starting research: "${formData.prompt}"`);
       addCliOutput("Initializing browser...");
       
       // Send the research request
-      const response = await axios.post('http://localhost:3002/api/run-research', {
+      const response = await axios.post(`http://${apiHost}:${apiPort}/api/run-research`, {
         ...updatedFormData,
         extraChromiumArgs: extraChromiumArgsArray,
         useEmbeddedBrowser: true, // Tell the server to use the embedded browser
