@@ -237,7 +237,8 @@ app.post('/api/run-research', async (req, res) => {
     wssUrl,
     cdpUrl,
     extraChromiumArgs,
-    proxy
+    proxy,
+    noStealthMode
   } = req.body;
 
   if (!prompt) {
@@ -258,6 +259,7 @@ app.post('/api/run-research', async (req, res) => {
   if (wssUrl) args.push('--wss-url', wssUrl);
   if (cdpUrl) args.push('--cdp-url', cdpUrl);
   if (proxy) args.push('--proxy', proxy);
+  if (noStealthMode) args.push('--no-stealth-mode');
   
   // Add extra chromium args if provided
   if (extraChromiumArgs && extraChromiumArgs.length > 0) {

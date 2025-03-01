@@ -7,6 +7,29 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
+from playwright_stealth import stealth_async
+
+# Custom Browser class that applies stealth mode
+class StealthBrowser(Browser):
+    """
+    Extended Browser class that applies stealth mode to each page.
+    """
+    def __init__(self, config=None, stealth_enabled=False):
+        super().__init__(config=config)
+        self.stealth_enabled = stealth_enabled
+        
+    async def new_page(self, **kwargs):
+        """
+        Create a new page with stealth mode applied.
+        """
+        page = await super().new_page(**kwargs)
+        
+        # Apply stealth mode to the page
+        if self.stealth_enabled:
+            print("Applying stealth mode to avoid captchas...")
+            await stealth_async(page)
+        
+        return page
 
 # Load environment variables
 load_dotenv()
@@ -21,7 +44,8 @@ async def run_research(
     cdp_url: str = None,
     proxy: str = None,
     connect_existing: bool = False,
-    embedded_browser: bool = False
+    embedded_browser: bool = False,
+    stealth_mode: bool = True  # Stealth mode enabled by default
 ):
     """
     Run research with the given prompt and browser configuration.
@@ -128,7 +152,11 @@ async def run_research(
         proxy={"server": proxy} if proxy else None
     )
     
-    browser = Browser(config=config)
+    # Use StealthBrowser by default (stealth_mode is True by default)
+    if stealth_mode:
+        browser = StealthBrowser(config=config, stealth_enabled=True)
+    else:
+        browser = Browser(config=config)
     
     try:
         # Initialize the agent with browser instance
@@ -196,6 +224,8 @@ def main():
                               help='Extra arguments to pass to the browser (can be used multiple times)')
     advanced_group.add_argument('--proxy', type=str,
                               help='Proxy settings in format "http://user:pass@host:port"')
+    advanced_group.add_argument('--no-stealth-mode', action='store_true',
+                              help='Disable stealth mode (stealth mode is enabled by default)')
     
     args = parser.parse_args()
     
@@ -215,7 +245,8 @@ def main():
             cdp_url=args.cdp_url,
             proxy=args.proxy,
             connect_existing=args.connect_existing,
-            embedded_browser=args.embedded_browser
+            embedded_browser=args.embedded_browser,
+            stealth_mode=not args.no_stealth_mode
         ))
     except KeyboardInterrupt:
         print("\n\nResearch interrupted by user.")
