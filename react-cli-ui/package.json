@@ -89,7 +89,8 @@
     "linux": {
       "target": "AppImage",
       "category": "Development"
-    }
+    },
+    "icon": "icons/icon"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

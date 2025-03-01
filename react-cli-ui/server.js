@@ -84,9 +84,15 @@ async function connectToCDP(port = 9222) {
       // First try to find a target that's not about:blank or chrome:// URL
       let target = targets.find(t => t.type === 'page' && !t.url.startsWith('about:') && !t.url.startsWith('chrome://'));
       
-      // If no suitable target found, fall back to the first page target
+      // If no suitable target found, fall back to any page target
       if (!target) {
         target = targets.find(t => t.type === 'page');
+      }
+      
+      // If still no target, use any target as a last resort
+      if (!target && targets.length > 0) {
+        console.log('No page target found, using first available target as fallback');
+        target = targets[0];
       }
       
       if (target) {
@@ -432,7 +438,7 @@ app.post('/api/run-research', async (req, res) => {
   // Always try to connect to CDP for screenshots, whether using embedded or local browser
   if (req.body.useEmbeddedBrowser || useLocalBrowser) {
     // Wait longer for the Python process to start the browser
-    const waitTime = useLocalBrowser ? 8000 : 5000;
+    const waitTime = useLocalBrowser ? 10000 : 8000;
     broadcastCliOutput(`Waiting ${waitTime/1000} seconds for browser to initialize...`);
     
     setTimeout(async () => {
