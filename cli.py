@@ -142,15 +142,22 @@ async def run_research(
         print("Running in embedded browser mode with args:", chromium_args)
     
     # Initialize browser with configurable options
-    config = BrowserConfig(
-        headless=headless,
-        disable_security=disable_security,
-        extra_chromium_args=chromium_args,
-        chrome_instance_path=chrome_path,
-        wss_url=wss_url,
-        cdp_url=cdp_url,
-        proxy={"server": proxy} if proxy else None
-    )
+    # Create a dictionary of kwargs to pass to BrowserConfig
+    browser_config_kwargs = {
+        "headless": headless,
+        "disable_security": disable_security,
+        "extra_chromium_args": chromium_args,
+        "chrome_instance_path": chrome_path,
+        "wss_url": wss_url,
+        "cdp_url": cdp_url,
+        "proxy": {"server": proxy} if proxy else None
+    }
+    
+    # Remove any None values to avoid passing unnecessary kwargs
+    browser_config_kwargs = {k: v for k, v in browser_config_kwargs.items() if v is not None}
+    
+    # Create the config object
+    config = BrowserConfig(**browser_config_kwargs)
     
     # Use StealthBrowser by default (stealth_mode is True by default)
     if stealth_mode:
