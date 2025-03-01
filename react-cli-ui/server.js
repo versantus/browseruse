@@ -47,8 +47,11 @@ wss.on('connection', (ws) => {
 // Function to connect to Chrome DevTools Protocol and capture screenshots
 async function connectToCDP(port = 9222) {
   try {
+    // Get the hostname dynamically
+    const hostname = require('os').hostname();
+    
     // Get the list of available targets (pages)
-    const response = await axios.get(`http://localhost:${port}/json/list`);
+    const response = await axios.get(`http://${hostname}:${port}/json/list`);
     const targets = response.data;
     
     if (targets && targets.length > 0) {
@@ -257,6 +260,16 @@ app.post('/api/run-research', async (req, res) => {
     if (!extraChromiumArgs || !extraChromiumArgs.some(arg => arg === '--no-sandbox')) {
       args.push('--chromium-arg=--no-sandbox');
     }
+    
+    // Set SERVER_ENVIRONMENT to true if running on a server without a display
+    // This will force headless mode in cli.py
+    const isServer = process.env.NODE_ENV === 'production' || 
+                    !process.env.DISPLAY || 
+                    process.env.SERVER_ENVIRONMENT === 'true';
+                    
+    if (isServer) {
+      process.env.SERVER_ENVIRONMENT = 'true';
+    }
   }
 
   console.log('Running command: python3', args.join(' '));
@@ -346,6 +359,7 @@ app.get('*', (req, res) => {
 });
 
 // Start the server
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+server.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
 });
