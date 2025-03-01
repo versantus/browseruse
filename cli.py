@@ -20,7 +20,8 @@ async def run_research(
     wss_url: str = None, 
     cdp_url: str = None,
     proxy: str = None,
-    connect_existing: bool = False
+    connect_existing: bool = False,
+    embedded_browser: bool = False
 ):
     """
     Run research with the given prompt and browser configuration.
@@ -70,6 +71,21 @@ async def run_research(
                 chrome_path = None  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
                 print(f"Error starting Chrome: {e}")
+    
+    # If embedded browser is enabled, ensure we're using the right configuration
+    if embedded_browser:
+        # Force headless to False when using embedded browser
+        headless = False
+        
+        # Make sure we have the remote debugging port set
+        if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
+            chromium_args.append('--remote-debugging-port=9222')
+        
+        # Add other necessary flags for embedding
+        if not any([arg == '--no-sandbox' for arg in chromium_args]):
+            chromium_args.append('--no-sandbox')
+            
+        print("Running in embedded browser mode with args:", chromium_args)
     
     # Initialize browser with configurable options
     config = BrowserConfig(
@@ -128,6 +144,8 @@ def main():
     visibility_group = parser.add_argument_group('Browser Visibility')
     visibility_group.add_argument('--no-headless', action='store_true', 
                       help='Run with browser visible (default: headless/invisible)')
+    visibility_group.add_argument('--embedded-browser', action='store_true',
+                      help='Run browser in embedded mode (for iframe integration)')
     
     # Add options for connecting to existing browser
     browser_group = parser.add_argument_group('Existing Browser Connection')
@@ -166,7 +184,8 @@ def main():
             wss_url=args.wss_url,
             cdp_url=args.cdp_url,
             proxy=args.proxy,
-            connect_existing=args.connect_existing
+            connect_existing=args.connect_existing,
+            embedded_browser=args.embedded_browser
         ))
     except KeyboardInterrupt:
         print("\n\nResearch interrupted by user.")
