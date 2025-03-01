@@ -438,12 +438,12 @@ app.post('/api/run-research', async (req, res) => {
   // Always try to connect to CDP for screenshots, whether using embedded or local browser
   if (req.body.useEmbeddedBrowser || useLocalBrowser) {
     // Wait longer for the Python process to start the browser
-    const waitTime = useLocalBrowser ? 10000 : 8000;
+    const waitTime = useLocalBrowser ? 15000 : 12000;
     broadcastCliOutput(`Waiting ${waitTime/1000} seconds for browser to initialize...`);
     
     setTimeout(async () => {
       // For local browser, we need to wait longer and retry a few times
-      const maxRetries = useLocalBrowser ? 5 : 1;
+      const maxRetries = useLocalBrowser ? 10 : 5;
       let retryCount = 0;
       let connected = false;
       
@@ -488,7 +488,7 @@ app.post('/api/run-research', async (req, res) => {
           broadcastCliOutput("You can manually start Chrome with: chrome --remote-debugging-port=9222");
         }
       }
-    }, useLocalBrowser ? 5000 : 3000); // Wait longer for local browser
+    }, waitTime); // Use the waitTime we defined earlier
   }
 
   // Collect data from stdout
