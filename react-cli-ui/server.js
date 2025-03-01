@@ -322,6 +322,50 @@ app.post('/api/run-research', async (req, res) => {
     if (!extraChromiumArgs || !extraChromiumArgs.some(arg => arg.includes('remote-debugging-port'))) {
       args.push('--chromium-arg=--remote-debugging-port=9222');
     }
+    
+    // When using local browser, we need to start Chrome with remote debugging enabled
+    // before running the Python script
+    if (chromePath || defaultChromePath) {
+      try {
+        const actualChromePath = chromePath || defaultChromePath;
+        broadcastCliOutput(`Starting Chrome at: ${actualChromePath}`);
+        
+        // Start Chrome with remote debugging
+        const chromeArgs = [
+          '--remote-debugging-port=9222',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--user-data-dir=./ChromeUserData'
+        ];
+        
+        // Add any extra args
+        if (extraChromiumArgs) {
+          extraChromiumArgs.forEach(arg => {
+            if (!arg.includes('remote-debugging-port')) {
+              chromeArgs.push(arg);
+            }
+          });
+        }
+        
+        // Start Chrome process
+        const { spawn } = require('child_process');
+        const chromeProcess = spawn(actualChromePath, chromeArgs, {
+          detached: true, // Run in background
+          stdio: 'ignore'
+        });
+        
+        // Don't wait for the Chrome process to exit
+        chromeProcess.unref();
+        
+        broadcastCliOutput(`Chrome started with remote debugging on port 9222`);
+        
+        // Wait a moment for Chrome to initialize
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } catch (error) {
+        console.error('Error starting Chrome:', error);
+        broadcastCliOutput(`Error starting Chrome: ${error.message}`);
+      }
+    }
   }
 
   console.log('Running command: python3', args.join(' '));
@@ -340,29 +384,53 @@ app.post('/api/run-research', async (req, res) => {
   if (req.body.useEmbeddedBrowser || useLocalBrowser) {
     // Wait a moment for the browser to start
     setTimeout(async () => {
-      try {
-        // This will start the screenshot capture process
-        await connectToCDP(9222);
-        broadcastCliOutput("Connected to browser for screenshots");
-        
-        // If we're running in headless mode on a server, let the user know
-        if (process.env.SERVER_ENVIRONMENT === 'true') {
-          broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
-        } else if (useLocalBrowser) {
-          broadcastCliOutput("Connected to local browser. Screenshots will be captured and displayed in the iframe.");
+      // For local browser, we need to wait longer and retry a few times
+      const maxRetries = useLocalBrowser ? 5 : 1;
+      let retryCount = 0;
+      let connected = false;
+      
+      while (retryCount < maxRetries && !connected) {
+        try {
+          // This will start the screenshot capture process
+          broadcastCliOutput(`Connecting to browser for screenshots (attempt ${retryCount + 1}/${maxRetries})...`);
+          await connectToCDP(9222);
+          broadcastCliOutput("Connected to browser for screenshots");
+          connected = true;
+          
+          // If we're running in headless mode on a server, let the user know
+          if (process.env.SERVER_ENVIRONMENT === 'true') {
+            broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
+          } else if (useLocalBrowser) {
+            broadcastCliOutput("Connected to local browser. Screenshots will be captured and displayed in the iframe.");
+          }
+        } catch (error) {
+          console.error(`Error connecting to browser (attempt ${retryCount + 1}/${maxRetries}):`, error);
+          broadcastCliOutput(`Error connecting to browser: ${error.message}`);
+          
+          if (retryCount < maxRetries - 1) {
+            broadcastCliOutput(`Retrying in 3 seconds...`);
+            // Wait 3 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+          
+          retryCount++;
         }
-      } catch (error) {
-        console.error('Error connecting to browser:', error);
-        broadcastCliOutput(`Error connecting to browser: ${error.message}`);
+      }
+      
+      if (!connected) {
+        broadcastCliOutput("Failed to connect to browser after multiple attempts.");
         
         // If we're running on a server, provide additional troubleshooting info
         if (process.env.SERVER_ENVIRONMENT === 'true') {
           broadcastCliOutput("Note: When running on a Linux server without a display, the browser runs in headless mode.");
           broadcastCliOutput("Screenshots should still be captured and displayed in the iframe.");
           broadcastCliOutput("If no screenshots appear, check that the browser is properly initialized with --headless=new flag.");
+        } else if (useLocalBrowser) {
+          broadcastCliOutput("Make sure Chrome is running with remote debugging enabled on port 9222.");
+          broadcastCliOutput("You can manually start Chrome with: chrome --remote-debugging-port=9222");
         }
       }
-    }, 3000); // Wait 3 seconds for the browser to initialize
+    }, useLocalBrowser ? 5000 : 3000); // Wait longer for local browser
   }
 
   // Collect data from stdout
