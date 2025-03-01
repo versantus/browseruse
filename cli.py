@@ -88,7 +88,7 @@ async def run_research(
             try:
                 subprocess.Popen(chrome_args)
                 print(f"Chrome started with remote debugging on port {debug_port}")
-                time.sleep(2)  # Give Chrome time to start
+                time.sleep(5)  # Give Chrome more time to start
                 
                 # Set the CDP URL to connect to this instance
                 # Use socket.gethostname() to get the current hostname
@@ -100,7 +100,42 @@ async def run_research(
                 print(f"Setting CDP URL to http://{hostname}:{debug_port}/json/version")
                 print(f"If connection fails, try manually setting --cdp-url=http://localhost:{debug_port}/json/version")
                 
+                # Try to connect to the CDP URL to verify it's working
+                import requests
+                import time
+                
+                # Give Chrome a bit more time to initialize
+                time.sleep(2)
+                
+                # Try to connect to the CDP URL
                 cdp_url = f"http://{hostname}:{debug_port}/json/version"
+                try:
+                    print(f"Testing connection to CDP URL: {cdp_url}")
+                    response = requests.get(cdp_url, timeout=5)
+                    if response.status_code == 200:
+                        print(f"Successfully connected to CDP URL: {cdp_url}")
+                    else:
+                        print(f"Failed to connect to CDP URL: {cdp_url}, status code: {response.status_code}")
+                        print(f"Trying localhost fallback...")
+                        cdp_url = f"http://localhost:{debug_port}/json/version"
+                        response = requests.get(cdp_url, timeout=5)
+                        if response.status_code == 200:
+                            print(f"Successfully connected to localhost CDP URL: {cdp_url}")
+                        else:
+                            print(f"Failed to connect to localhost CDP URL: {cdp_url}, status code: {response.status_code}")
+                except Exception as e:
+                    print(f"Error connecting to CDP URL: {e}")
+                    print(f"Trying localhost fallback...")
+                    cdp_url = f"http://localhost:{debug_port}/json/version"
+                    try:
+                        response = requests.get(cdp_url, timeout=5)
+                        if response.status_code == 200:
+                            print(f"Successfully connected to localhost CDP URL: {cdp_url}")
+                        else:
+                            print(f"Failed to connect to localhost CDP URL: {cdp_url}, status code: {response.status_code}")
+                    except Exception as e:
+                        print(f"Error connecting to localhost CDP URL: {e}")
+                
                 chrome_path = ""  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
                 print(f"Error starting Chrome: {e}")
@@ -115,6 +150,7 @@ async def run_research(
         # Force headless to False for embedded browser, regardless of server environment
         # This ensures the browser is visible and can be captured by screenshots
         headless = False
+        print("Embedded browser mode: Setting headless=False to ensure browser is visible for screenshots")
         
         # Make sure we have the remote debugging port set
         if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):

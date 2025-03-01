@@ -50,35 +50,38 @@ wss.on('connection', (ws) => {
 // Function to connect to Chrome DevTools Protocol and capture screenshots
 async function connectToCDP(port = 9222) {
   try {
-    // Get the hostname dynamically
-    const hostname = require('os').hostname();
-    
     console.log(`Attempting to connect to CDP at http://${hostname}:${port}/json/list`);
+    broadcastCliOutput(`Attempting to connect to CDP at http://${hostname}:${port}/json/list`);
     
     let response;
     let targets;
     
     try {
-      // Try connecting using the hostname
+      // First try using the hostname
       response = await axios.get(`http://${hostname}:${port}/json/list`);
       targets = response.data;
       console.log(`Successfully connected to CDP using hostname: ${hostname}`);
+      broadcastCliOutput(`Successfully connected to CDP using hostname: ${hostname}`);
     } catch (error) {
-      console.log(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
-      console.log(`Trying fallback to localhost...`);
+      console.error(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
+      broadcastCliOutput(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
       
       // If that fails, try connecting to localhost
+      broadcastCliOutput(`Trying fallback to localhost...`);
       response = await axios.get(`http://localhost:${port}/json/list`);
       targets = response.data;
       console.log(`Successfully connected to CDP using localhost fallback`);
+      broadcastCliOutput(`Successfully connected to CDP using localhost fallback`);
     }
     
     console.log(`Found ${targets.length} browser targets`);
+    broadcastCliOutput(`Found ${targets.length} browser targets`);
     
     if (targets && targets.length > 0) {
       // Log all targets for debugging
       targets.forEach((t, i) => {
         console.log(`Target ${i}: type=${t.type}, title=${t.title}, url=${t.url}`);
+        broadcastCliOutput(`Target ${i}: type=${t.type}, title=${t.title}, url=${t.url}`);
       });
       
       // First try to find a target that's not about:blank or chrome:// URL
@@ -86,26 +89,42 @@ async function connectToCDP(port = 9222) {
       
       // If no suitable target found, fall back to any page target
       if (!target) {
+        console.log('No non-chrome URL target found, falling back to any page target');
+        broadcastCliOutput('No non-chrome URL target found, falling back to any page target');
         target = targets.find(t => t.type === 'page');
       }
       
       // If still no target, use any target as a last resort
       if (!target && targets.length > 0) {
         console.log('No page target found, using first available target as fallback');
+        broadcastCliOutput('No page target found, using first available target as fallback');
         target = targets[0];
       }
       
       if (target) {
         console.log('Found browser target:', target.title);
+        broadcastCliOutput(`Found browser target: ${target.title}`);
         
         // Create a WebSocket connection to the target
         console.log('Connecting to WebSocket URL:', target.webSocketDebuggerUrl);
+        broadcastCliOutput(`Connecting to WebSocket URL: ${target.webSocketDebuggerUrl}`);
+        
         const ws = new WebSocket(target.webSocketDebuggerUrl);
         
         // Add error handler for WebSocket connection
         ws.on('error', (error) => {
           console.error('WebSocket connection error:', error.message);
           broadcastCliOutput(`WebSocket connection error: ${error.message}`);
+          
+          // Broadcast error to clients
+          clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'error',
+                message: `WebSocket connection error: ${error.message}`
+              }));
+            }
+          });
         });
         
         // Set up message handler
@@ -127,6 +146,7 @@ async function connectToCDP(port = 9222) {
             }
           } catch (error) {
             console.error('Error processing CDP message:', error);
+            broadcastCliOutput(`Error processing CDP message: ${error.message}`);
           }
         });
         
@@ -134,6 +154,16 @@ async function connectToCDP(port = 9222) {
         ws.on('open', () => {
           console.log('Connected to Chrome target');
           broadcastCliOutput('Connected to Chrome target for screenshots');
+          
+          // Broadcast success to clients
+          clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'connected',
+                message: 'Connected to browser'
+              }));
+            }
+          });
           
           // Start capturing screenshots periodically
           const captureInterval = setInterval(() => {
@@ -152,9 +182,37 @@ async function connectToCDP(port = 9222) {
         return target.webSocketDebuggerUrl;
       }
     }
-    throw new Error('No browser targets found');
+    
+    // If we get here, no suitable target was found
+    const errorMsg = 'No browser targets found';
+    console.error(errorMsg);
+    broadcastCliOutput(`Error connecting to CDP: ${errorMsg}`);
+    
+    // Broadcast error to clients
+    clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'error',
+          message: errorMsg
+        }));
+      }
+    });
+    
+    throw new Error(errorMsg);
   } catch (error) {
     console.error('Error connecting to CDP:', error.message);
+    broadcastCliOutput(`Error connecting to CDP: ${error.message}`);
+    
+    // Broadcast error to clients
+    clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'error',
+          message: `Error connecting to CDP: ${error.message}`
+        }));
+      }
+    });
+    
     return null;
   }
 }
@@ -198,6 +256,16 @@ app.get('/embedded-browser', (req, res) => {
           font-family: Arial, sans-serif;
           color: #333;
         }
+        .error-message {
+          color: #e74c3c;
+          margin-top: 10px;
+          font-family: Arial, sans-serif;
+          text-align: center;
+          padding: 10px;
+          background-color: #fadbd8;
+          border-radius: 4px;
+          max-width: 80%;
+        }
       </style>
     </head>
     <body>
@@ -210,39 +278,75 @@ app.get('/embedded-browser', (req, res) => {
       <script>
         // Create a WebSocket connection to the server
         const socket = new WebSocket('ws://' + window.location.host);
+        let connectionAttempts = 0;
+        const maxAttempts = 5;
+        let reconnectTimer = null;
         
-        socket.onopen = function() {
-          console.log('WebSocket connection established');
-        };
-        
-        socket.onmessage = function(event) {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'screenshot') {
-            // When we receive a screenshot, display it
+        function connectWebSocket() {
+          if (connectionAttempts >= maxAttempts) {
             const container = document.getElementById('browser-container');
+            container.innerHTML += '<div class="error-message">Failed to connect to browser after multiple attempts. Please try refreshing the page.</div>';
+            return;
+          }
+          
+          connectionAttempts++;
+          console.log('Attempting WebSocket connection, attempt ' + connectionAttempts);
+          
+          socket.onopen = function() {
+            console.log('WebSocket connection established');
+            // Reset connection attempts on successful connection
+            connectionAttempts = 0;
+          };
+          
+          socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
             
-            // If this is the first screenshot, clear the initializing message
-            if (!document.getElementById('browser-display')) {
-              container.innerHTML = '<img id="browser-display" src="" alt="Browser content" />';
+            if (data.type === 'screenshot') {
+              // When we receive a screenshot, display it
+              const container = document.getElementById('browser-container');
+              
+              // If this is the first screenshot, clear the initializing message
+              if (!document.getElementById('browser-display')) {
+                container.innerHTML = '<img id="browser-display" src="" alt="Browser content" />';
+              }
+              
+              // Update the screenshot
+              const img = document.getElementById('browser-display');
+              img.src = 'data:image/jpeg;base64,' + data.data;
             }
-            
-            // Update the screenshot
-            const img = document.getElementById('browser-display');
-            img.src = 'data:image/jpeg;base64,' + data.data;
-          }
-          else if (data.type === 'cli-output') {
-            // Forward CLI output to parent window
-            window.parent.postMessage({
-              type: 'cli-output',
-              data: data.data
-            }, '*');
-          }
-        };
+            else if (data.type === 'cli-output') {
+              // Forward CLI output to parent window
+              window.parent.postMessage({
+                type: 'cli-output',
+                data: data.data
+              }, '*');
+            }
+            else if (data.type === 'error') {
+              // Display error message
+              const container = document.getElementById('browser-container');
+              if (!document.querySelector('.error-message')) {
+                container.innerHTML += '<div class="error-message">' + data.message + '</div>';
+              }
+            }
+          };
+          
+          socket.onclose = function() {
+            console.log('WebSocket connection closed');
+            // Try to reconnect after a delay
+            if (connectionAttempts < maxAttempts) {
+              reconnectTimer = setTimeout(connectWebSocket, 3000);
+            }
+          };
+          
+          socket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            // Close the socket to trigger the onclose handler which will attempt to reconnect
+            socket.close();
+          };
+        }
         
-        socket.onclose = function() {
-          console.log('WebSocket connection closed');
-        };
+        // Start the connection
+        connectWebSocket();
         
         // Notify the parent window that the iframe is ready
         window.parent.postMessage({ type: 'iframe-ready' }, '*');
