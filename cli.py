@@ -67,15 +67,23 @@ async def run_research(
                 time.sleep(2)  # Give Chrome time to start
                 
                 # Set the CDP URL to connect to this instance
-                cdp_url = f"http://localhost:{debug_port}/json/version"
+                # Use socket.gethostname() to get the current hostname
+                import socket
+                hostname = socket.gethostname()
+                cdp_url = f"http://{hostname}:{debug_port}/json/version"
                 chrome_path = None  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
                 print(f"Error starting Chrome: {e}")
     
     # If embedded browser is enabled, ensure we're using the right configuration
     if embedded_browser:
-        # Force headless to False when using embedded browser
-        headless = False
+        # When running on a server without a display, we need to use headless mode
+        # Check if we're running on a server by looking for environment variables
+        import os
+        is_server = os.environ.get('SERVER_ENVIRONMENT') == 'true'
+        
+        # Force headless to True when running on a server, otherwise False for embedded browser
+        headless = True if is_server else False
         
         # Make sure we have the remote debugging port set
         if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
