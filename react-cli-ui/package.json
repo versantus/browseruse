@@ -78,25 +78,28 @@
       }
     ],
     "directories": {
-      "buildResources": "public"
+      "buildResources": "icons"
     },
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "icons/icon.icns"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "icons/icon.ico"
     },
     "linux": {
       "target": "AppImage",
-      "category": "Development"
-    },
-    "icon": "icons/icon"
+      "category": "Development",
+      "icon": "icons/icon.png"
+    }
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
     "electron-builder": "^25.1.8",
+    "sharp": "^0.33.5",
     "wait-on": "^8.0.2"
   }
 }
