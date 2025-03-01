@@ -112,8 +112,9 @@ async def run_research(
         import os
         is_server = os.environ.get('SERVER_ENVIRONMENT') == 'true'
         
-        # Force headless to True when running on a server, otherwise False for embedded browser
-        headless = True if is_server else False
+        # Force headless to False for embedded browser, regardless of server environment
+        # This ensures the browser is visible and can be captured by screenshots
+        headless = False
         
         # Make sure we have the remote debugging port set
         if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):

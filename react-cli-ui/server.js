@@ -99,7 +99,14 @@ async function connectToCDP(port = 9222) {
         console.log('Found browser target:', target.title);
         
         // Create a WebSocket connection to the target
+        console.log('Connecting to WebSocket URL:', target.webSocketDebuggerUrl);
         const ws = new WebSocket(target.webSocketDebuggerUrl);
+        
+        // Add error handler for WebSocket connection
+        ws.on('error', (error) => {
+          console.error('WebSocket connection error:', error.message);
+          broadcastCliOutput(`WebSocket connection error: ${error.message}`);
+        });
         
         // Set up message handler
         ws.on('message', (message) => {
@@ -126,6 +133,7 @@ async function connectToCDP(port = 9222) {
         // When the connection is established
         ws.on('open', () => {
           console.log('Connected to Chrome target');
+          broadcastCliOutput('Connected to Chrome target for screenshots');
           
           // Start capturing screenshots periodically
           const captureInterval = setInterval(() => {
