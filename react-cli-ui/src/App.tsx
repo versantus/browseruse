@@ -14,6 +14,22 @@ interface FormData {
   cdpUrl: string;
   extraChromiumArgs: string;
   proxy: string;
+  useRemoteBackend: boolean;
+  remoteBackendUrl: string;
+}
+
+// Define Electron API interface
+interface ElectronAPI {
+  getAppPath: () => Promise<string>;
+  setBackendConfig: (config: any) => Promise<boolean>;
+  selectChromePath: () => Promise<string | null>;
+}
+
+// Add Electron API to window
+declare global {
+  interface Window {
+    electron?: ElectronAPI;
+  }
 }
 
 interface CliOutput {
@@ -33,7 +49,12 @@ function App() {
     cdpUrl: '',
     extraChromiumArgs: '',
     proxy: '',
+    useRemoteBackend: false,
+    remoteBackendUrl: '',
   });
+  
+  // State to track if running in Electron
+  const [isElectron, setIsElectron] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -74,6 +95,16 @@ function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
+  }, []);
+  
+  // Detect if running in Electron
+  useEffect(() => {
+    setIsElectron(!!window.electron);
+    
+    // If running in Electron, set up Chrome path selection
+    if (window.electron) {
+      console.log('Running in Electron environment');
+    }
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -360,15 +391,33 @@ function App() {
 
                   <div className="form-group">
                     <label htmlFor="chromePath">Chrome Path:</label>
-                    <input
-                      type="text"
-                      id="chromePath"
-                      name="chromePath"
-                      value={formData.chromePath}
-                      onChange={handleInputChange}
-                      placeholder="e.g., /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-                      disabled={!formData.connectExisting}
-                    />
+                    <div className="chrome-path-container">
+                      <input
+                        type="text"
+                        id="chromePath"
+                        name="chromePath"
+                        value={formData.chromePath}
+                        onChange={handleInputChange}
+                        placeholder="e.g., /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+                        disabled={!formData.connectExisting}
+                      />
+                      {isElectron && (
+                        <button 
+                          type="button" 
+                          onClick={async () => {
+                            if (window.electron) {
+                              const path = await window.electron.selectChromePath();
+                              if (path) {
+                                setFormData({...formData, chromePath: path});
+                              }
+                            }
+                          }}
+                          disabled={!formData.connectExisting}
+                        >
+                          Browse...
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-group">
@@ -399,6 +448,33 @@ function App() {
                 </div>
 
                 {/* Additional Options */}
+                <div className="form-section">
+                  <h3>Backend Configuration</h3>
+                  <div className="form-group checkbox">
+                    <input
+                      type="checkbox"
+                      id="useRemoteBackend"
+                      name="useRemoteBackend"
+                      checked={formData.useRemoteBackend}
+                      onChange={handleInputChange}
+                    />
+                    <label htmlFor="useRemoteBackend">Use Remote Backend</label>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="remoteBackendUrl">Remote Backend URL:</label>
+                    <input
+                      type="text"
+                      id="remoteBackendUrl"
+                      name="remoteBackendUrl"
+                      value={formData.remoteBackendUrl}
+                      onChange={handleInputChange}
+                      placeholder="e.g., http://example.com:3002"
+                      disabled={!formData.useRemoteBackend}
+                    />
+                  </div>
+                </div>
+                
                 <div className="form-section">
                   <h3>Additional Options</h3>
                   <div className="form-group">

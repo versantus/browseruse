@@ -13,7 +13,6 @@
     "@types/react-dom": "^19.0.4",
     "axios": "^1.8.1",
     "body-parser": "^1.20.3",
-    "concurrently": "^9.1.2",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "react": "^19.0.0",
@@ -31,7 +30,12 @@
     "eject": "react-scripts eject",
     "server": "node server.js",
     "dev": "concurrently \"npm run server\" \"npm start\"",
-    "prod": "npm run build && node server.js"
+    "prod": "npm run build && node server.js",
+    "electron-dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3003 && cross-env ELECTRON_START_URL=http://localhost:3003 electron .\"",
+    "electron": "electron .",
+    "electron-build": "npm run build && electron-builder",
+    "electron-pack": "electron-builder --dir",
+    "electron-dist": "electron-builder"
   },
   "eslintConfig": {
     "extends": [
@@ -50,5 +54,47 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "main": "main.js",
+  "build": {
+    "appId": "com.versantus.browseruse",
+    "productName": "Browser Use",
+    "files": [
+      "build/**/*",
+      "node_modules/**/*",
+      "main.js",
+      "preload.js",
+      "server.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "extraResources",
+        "filter": [
+          "cli.py",
+          "requirements.txt"
+        ]
+      }
+    ],
+    "directories": {
+      "buildResources": "public"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.2"
   }
 }

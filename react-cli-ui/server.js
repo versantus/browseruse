@@ -13,6 +13,9 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3002;
 
+// Check if running in Electron
+const isElectron = process.env.ELECTRON_RUN_AS_NODE || process.versions.electron;
+
 // Store WebSocket connections
 const clients = new Set();
 
@@ -239,11 +242,30 @@ app.post('/api/run-research', async (req, res) => {
     cdpUrl,
     extraChromiumArgs,
     proxy,
-    noStealthMode
+    noStealthMode,
+    useRemoteBackend,
+    remoteBackendUrl
   } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
+  }
+  
+  // If using remote backend, forward the request
+  if (useRemoteBackend && remoteBackendUrl) {
+    try {
+      broadcastCliOutput(`Using remote backend at: ${remoteBackendUrl}`);
+      
+      // Forward the request to the remote backend
+      const response = await axios.post(`${remoteBackendUrl}/api/run-research`, req.body);
+      
+      // Return the response from the remote backend
+      return res.json(response.data);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || err.message || 'Error connecting to remote backend';
+      broadcastCliOutput(`ERROR: ${errorMsg}`);
+      return res.status(500).json({ error: errorMsg });
+    }
   }
 
   // Build the command arguments
