@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const url = require('url');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
+const fs = require('fs');
 
 // Keep a global reference of the window object to avoid garbage collection
 let mainWindow;
@@ -68,8 +69,38 @@ function stopServer() {
   }
 }
 
+// Check if required global packages are installed
+function checkGlobalPackages() {
+  console.log('Checking for required global packages...');
+  
+  const requiredPackages = ['cross-env', 'wait-on'];
+  const missingPackages = [];
+  
+  requiredPackages.forEach(pkg => {
+    try {
+      execSync(`npm list -g ${pkg} --depth=0`, { stdio: 'ignore' });
+    } catch (error) {
+      missingPackages.push(pkg);
+    }
+  });
+  
+  if (missingPackages.length > 0) {
+    const message = `The following required global packages are missing:\n${missingPackages.join(', ')}\n\nPlease install them using:\nnpm install -g ${missingPackages.join(' ')}\n\nThen try running the application again.`;
+    dialog.showErrorBox('Missing Dependencies', message);
+    return false;
+  }
+  
+  return true;
+}
+
 // This method will be called when Electron has finished initialization
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (checkGlobalPackages()) {
+    createWindow();
+  } else {
+    app.quit();
+  }
+});
 
 // Quit when all windows are closed
 app.on('window-all-closed', function() {

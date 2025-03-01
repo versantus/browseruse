@@ -2,6 +2,56 @@
 
 A demonstration of AI-powered browser automation using browser-use. This demo shows how AI agents can control web browsers to perform tasks like writing documents and conducting research.
 
+## Electron App
+
+This project also includes an Electron desktop application that allows you to run the browser automation locally or connect to a remote backend.
+
+### Prerequisites for Electron App
+
+- Node.js 14 or higher
+- npm 6 or higher
+- The following global npm packages:
+  - cross-env
+  - wait-on
+
+Install the required global packages:
+```bash
+npm install -g cross-env wait-on
+```
+
+### Running the Electron App
+
+Navigate to the react-cli-ui directory:
+```bash
+cd react-cli-ui
+```
+
+Install dependencies:
+```bash
+npm install
+```
+
+Run the app in development mode:
+```bash
+npm run electron-dev
+```
+
+### Building the Electron App
+
+To create distributable packages:
+```bash
+npm run electron-build
+```
+
+This will create packages in the `dist` directory for your current platform.
+
+### Electron App Features
+
+- Run browser automation locally or connect to a remote backend
+- Select Chrome executable path using a file browser
+- Configure remote backend URL
+- Cross-platform support (Windows, macOS, Linux)
+
 ## Prerequisites
 
 - Python 3.8 or higher
