@@ -93,6 +93,10 @@ async def run_research(
         if not any([arg == '--no-sandbox' for arg in chromium_args]):
             chromium_args.append('--no-sandbox')
             
+        # If running in headless mode on a server, add the new headless flag
+        if is_server and not any([arg.startswith('--headless=') for arg in chromium_args]):
+            chromium_args.append('--headless=new')
+            
         print("Running in embedded browser mode with args:", chromium_args)
     
     # Initialize browser with configurable options
