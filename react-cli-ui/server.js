@@ -76,8 +76,19 @@ async function connectToCDP(port = 9222) {
     console.log(`Found ${targets.length} browser targets`);
     
     if (targets && targets.length > 0) {
-      // Find the first page target
-      const target = targets.find(t => t.type === 'page');
+      // Log all targets for debugging
+      targets.forEach((t, i) => {
+        console.log(`Target ${i}: type=${t.type}, title=${t.title}, url=${t.url}`);
+      });
+      
+      // First try to find a target that's not about:blank or chrome:// URL
+      let target = targets.find(t => t.type === 'page' && !t.url.startsWith('about:') && !t.url.startsWith('chrome://'));
+      
+      // If no suitable target found, fall back to the first page target
+      if (!target) {
+        target = targets.find(t => t.type === 'page');
+      }
+      
       if (target) {
         console.log('Found browser target:', target.title);
         
@@ -348,34 +359,20 @@ app.post('/api/run-research', async (req, res) => {
     // When using local browser, we need to start Chrome with remote debugging enabled
     // before running the Python script
     const actualChromePath = chromePath || defaultChromePath;
-    if (actualChromePath) {
+    if (actualChromePath && !args.includes('--connect-existing')) {
       try {
-        broadcastCliOutput(`Starting Chrome at: ${actualChromePath}`);
+        broadcastCliOutput(`Chrome path detected: ${actualChromePath}`);
+        broadcastCliOutput(`Letting cli.py handle Chrome startup with --connect-existing flag`);
         
-        // Start Chrome with remote debugging
-        const chromeArgs = [
-          '--remote-debugging-port=9222',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--user-data-dir=./ChromeUserData'
-        ];
+        // Add connect-existing flag to let cli.py handle Chrome startup
+        args.push('--connect-existing');
         
-        // Add any extra args
-        if (extraChromiumArgs) {
-          extraChromiumArgs.forEach(arg => {
-            if (!arg.includes('remote-debugging-port')) {
-              chromeArgs.push(arg);
-            }
-          });
-        }
-        
-        // Log the Chrome path and arguments for debugging
+        // Log the Chrome path for debugging
         broadcastCliOutput(`Chrome path: ${actualChromePath}`);
-        broadcastCliOutput(`Chrome args: ${chromeArgs.join(' ')}`);
         
         // Check if the Chrome executable exists
         if (!fs.existsSync(actualChromePath)) {
-          broadcastCliOutput(`ERROR: Chrome executable not found at ${actualChromePath}`);
+          broadcastCliOutput(`WARNING: Chrome executable not found at ${actualChromePath}`);
           broadcastCliOutput(`Checking for Chrome in other common locations...`);
           
           // Try some alternative locations
@@ -400,44 +397,22 @@ app.post('/api/run-research', async (req, res) => {
           }
           
           if (!found) {
-            broadcastCliOutput(`ERROR: Could not find Chrome in any common location. Please specify the path manually.`);
-            throw new Error(`Chrome executable not found at ${actualChromePath} or any common location`);
+            broadcastCliOutput(`WARNING: Could not find Chrome in any common location. cli.py will attempt to find it.`);
+          } else {
+            // Use the found path
+            actualChromePath = foundPath;
+            // Update the chrome path in args
+            const chromePathIndex = args.indexOf('--chrome-path') + 1;
+            if (chromePathIndex > 0 && chromePathIndex < args.length) {
+              args[chromePathIndex] = actualChromePath;
+            } else {
+              args.push('--chrome-path', actualChromePath);
+            }
           }
-          
-          // Use the found path
-          actualChromePath = foundPath;
         }
-        
-        // Start Chrome process
-        const chromeProcess = spawn(actualChromePath, chromeArgs, {
-          detached: true, // Run in background
-          stdio: 'pipe' // Capture output for debugging
-        });
-        
-        // Capture and log any output from Chrome for debugging
-        chromeProcess.stdout.on('data', (data) => {
-          broadcastCliOutput(`Chrome stdout: ${data.toString()}`);
-        });
-        
-        chromeProcess.stderr.on('data', (data) => {
-          broadcastCliOutput(`Chrome stderr: ${data.toString()}`);
-        });
-        
-        chromeProcess.on('error', (err) => {
-          broadcastCliOutput(`ERROR starting Chrome: ${err.message}`);
-          console.error('Error starting Chrome:', err);
-        });
-        
-        // Don't wait for the Chrome process to exit
-        chromeProcess.unref();
-        
-        broadcastCliOutput(`Chrome started with remote debugging on port 9222`);
-        
-        // Wait a moment for Chrome to initialize
-        await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (error) {
-        console.error('Error starting Chrome:', error);
-        broadcastCliOutput(`Error starting Chrome: ${error.message}`);
+        console.error('Error configuring Chrome path:', error);
+        broadcastCliOutput(`Error configuring Chrome path: ${error.message}`);
       }
     }
   }
@@ -456,7 +431,10 @@ app.post('/api/run-research', async (req, res) => {
   
   // Always try to connect to CDP for screenshots, whether using embedded or local browser
   if (req.body.useEmbeddedBrowser || useLocalBrowser) {
-    // Wait a moment for the browser to start
+    // Wait longer for the Python process to start the browser
+    const waitTime = useLocalBrowser ? 8000 : 5000;
+    broadcastCliOutput(`Waiting ${waitTime/1000} seconds for browser to initialize...`);
+    
     setTimeout(async () => {
       // For local browser, we need to wait longer and retry a few times
       const maxRetries = useLocalBrowser ? 5 : 1;
