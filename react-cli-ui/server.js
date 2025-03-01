@@ -298,9 +298,9 @@ app.post('/api/run-research', async (req, res) => {
     args.push('--connect-existing');
     
     // If chrome path is not provided, try to use a default path based on OS
+    let defaultChromePath = '';
     if (!chromePath) {
       const platform = process.platform;
-      let defaultChromePath = '';
       
       if (platform === 'darwin') {
         // macOS
@@ -325,9 +325,9 @@ app.post('/api/run-research', async (req, res) => {
     
     // When using local browser, we need to start Chrome with remote debugging enabled
     // before running the Python script
-    if (chromePath || defaultChromePath) {
+    const actualChromePath = chromePath || defaultChromePath;
+    if (actualChromePath) {
       try {
-        const actualChromePath = chromePath || defaultChromePath;
         broadcastCliOutput(`Starting Chrome at: ${actualChromePath}`);
         
         // Start Chrome with remote debugging
@@ -347,11 +347,63 @@ app.post('/api/run-research', async (req, res) => {
           });
         }
         
+        // Log the Chrome path and arguments for debugging
+        broadcastCliOutput(`Chrome path: ${actualChromePath}`);
+        broadcastCliOutput(`Chrome args: ${chromeArgs.join(' ')}`);
+        
+        // Check if the Chrome executable exists
+        if (!fs.existsSync(actualChromePath)) {
+          broadcastCliOutput(`ERROR: Chrome executable not found at ${actualChromePath}`);
+          broadcastCliOutput(`Checking for Chrome in other common locations...`);
+          
+          // Try some alternative locations
+          const alternativePaths = [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser'
+          ];
+          
+          let found = false;
+          let foundPath = '';
+          
+          for (const path of alternativePaths) {
+            if (fs.existsSync(path)) {
+              broadcastCliOutput(`Found Chrome at: ${path}`);
+              foundPath = path;
+              found = true;
+              break;
+            }
+          }
+          
+          if (!found) {
+            broadcastCliOutput(`ERROR: Could not find Chrome in any common location. Please specify the path manually.`);
+            throw new Error(`Chrome executable not found at ${actualChromePath} or any common location`);
+          }
+          
+          // Use the found path
+          actualChromePath = foundPath;
+        }
+        
         // Start Chrome process
-        const { spawn } = require('child_process');
         const chromeProcess = spawn(actualChromePath, chromeArgs, {
           detached: true, // Run in background
-          stdio: 'ignore'
+          stdio: 'pipe' // Capture output for debugging
+        });
+        
+        // Capture and log any output from Chrome for debugging
+        chromeProcess.stdout.on('data', (data) => {
+          broadcastCliOutput(`Chrome stdout: ${data.toString()}`);
+        });
+        
+        chromeProcess.stderr.on('data', (data) => {
+          broadcastCliOutput(`Chrome stderr: ${data.toString()}`);
+        });
+        
+        chromeProcess.on('error', (err) => {
+          broadcastCliOutput(`ERROR starting Chrome: ${err.message}`);
+          console.error('Error starting Chrome:', err);
         });
         
         // Don't wait for the Chrome process to exit
