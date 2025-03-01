@@ -8,6 +8,7 @@ interface FormData {
   noHeadless: boolean;
   enableSecurity: boolean;
   connectExisting: boolean;
+  useLocalBrowser: boolean;
   chromePath: string;
   wssUrl: string;
   cdpUrl: string;
@@ -26,6 +27,7 @@ function App() {
     noHeadless: false,
     enableSecurity: false,
     connectExisting: false,
+    useLocalBrowser: false,
     chromePath: '',
     wssUrl: '',
     cdpUrl: '',
@@ -76,11 +78,23 @@ function App() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target as HTMLInputElement;
+    const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : false;
     
-    setFormData({
+    // Create updated form data
+    const updatedFormData = {
       ...formData,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    });
+      [name]: type === 'checkbox' ? checked : value,
+    };
+    
+    // Special handling for useLocalBrowser
+    if (name === 'useLocalBrowser') {
+      // If useLocalBrowser is checked, also check connectExisting
+      if (checked) {
+        updatedFormData.connectExisting = true;
+      }
+    }
+    
+    setFormData(updatedFormData);
   };
   
   // Handle keyboard shortcuts (Ctrl+Enter or Cmd+Enter)
@@ -115,9 +129,10 @@ function App() {
     const apiPort = '3002'; // API server always runs on port 3002
     
     // Always set noHeadless to true when using embedded browser
+    // unless using local browser
     const updatedFormData = {
       ...formData,
-      noHeadless: true
+      noHeadless: formData.useLocalBrowser ? formData.noHeadless : true
     };
 
     try {
@@ -126,11 +141,13 @@ function App() {
         ? updatedFormData.extraChromiumArgs.split(',').map(arg => arg.trim())
         : [];
 
-      // Show the embedded browser
-      setBrowserVisible(true);
+      // Show the embedded browser only if not using local browser
+      setBrowserVisible(!formData.useLocalBrowser);
       
-      // Set the browser URL to the embedded browser endpoint
-      setBrowserUrl(`http://${apiHost}:${apiPort}/embedded-browser`);
+      if (!formData.useLocalBrowser) {
+        // Set the browser URL to the embedded browser endpoint
+        setBrowserUrl(`http://${apiHost}:${apiPort}/embedded-browser`);
+      }
       
       // Add initial CLI output
       addCliOutput(`Starting research: "${formData.prompt}"`);
@@ -140,7 +157,7 @@ function App() {
       const response = await axios.post(`http://${apiHost}:${apiPort}/api/run-research`, {
         ...updatedFormData,
         extraChromiumArgs: extraChromiumArgsArray,
-        useEmbeddedBrowser: true, // Tell the server to use the embedded browser
+        useEmbeddedBrowser: !formData.useLocalBrowser, // Only use embedded browser if not using local browser
       });
 
       // Add the response to CLI output
@@ -252,7 +269,7 @@ function App() {
             )}
           </div>
           
-          {/* Browser Container - Only shown when research is in progress */}
+          {/* Browser Container - Only shown when research is in progress and not using local browser */}
           {browserVisible && (
             <div className="browser-container">
               <h2>Embedded Browser</h2>
@@ -266,6 +283,18 @@ function App() {
                 position="relative"
                 allowFullScreen
               />
+            </div>
+          )}
+          
+          {/* Local Browser Message - Only shown when using local browser */}
+          {!browserVisible && isLoading && formData.useLocalBrowser && (
+            <div className="browser-container">
+              <h2>Using Local Browser</h2>
+              <div className="local-browser-message">
+                <p>Research is being conducted in your local browser.</p>
+                <p>Check your browser window to see the research in progress.</p>
+                <p>Results will appear here when the research is complete.</p>
+              </div>
             </div>
           )}
           
@@ -284,12 +313,27 @@ function App() {
                   <div className="form-group checkbox">
                     <input
                       type="checkbox"
+                      id="useLocalBrowser"
+                      name="useLocalBrowser"
+                      checked={formData.useLocalBrowser}
+                      onChange={handleInputChange}
+                    />
+                    <label htmlFor="useLocalBrowser">Use Local Browser (instead of embedded)</label>
+                  </div>
+
+                  <div className="form-group checkbox">
+                    <input
+                      type="checkbox"
                       id="noHeadless"
                       name="noHeadless"
                       checked={formData.noHeadless}
                       onChange={handleInputChange}
+                      disabled={!formData.useLocalBrowser}
                     />
                     <label htmlFor="noHeadless">Show Browser (not headless)</label>
+                    {formData.useLocalBrowser && 
+                      <small>When using local browser, this controls whether the browser window is visible</small>
+                    }
                   </div>
 
                   <div className="form-group checkbox">
@@ -312,10 +356,14 @@ function App() {
                       type="checkbox"
                       id="connectExisting"
                       name="connectExisting"
-                      checked={formData.connectExisting}
+                      checked={formData.connectExisting || formData.useLocalBrowser}
                       onChange={handleInputChange}
+                      disabled={formData.useLocalBrowser}
                     />
                     <label htmlFor="connectExisting">Connect to Existing Browser</label>
+                    {formData.useLocalBrowser && 
+                      <small>Automatically enabled when using local browser</small>
+                    }
                   </div>
 
                   <div className="form-group">

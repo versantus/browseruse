@@ -233,6 +233,7 @@ app.post('/api/run-research', async (req, res) => {
     noHeadless,
     enableSecurity,
     connectExisting,
+    useLocalBrowser,
     chromePath,
     wssUrl,
     cdpUrl,
@@ -268,8 +269,8 @@ app.post('/api/run-research', async (req, res) => {
     });
   }
   
-  // If using embedded browser, add a special flag
-  if (req.body.useEmbeddedBrowser) {
+  // If using embedded browser and not using local browser, add a special flag
+  if (req.body.useEmbeddedBrowser && !useLocalBrowser) {
     args.push('--embedded-browser');
     
     // Add additional arguments for embedded browser as a single string
@@ -291,6 +292,37 @@ app.post('/api/run-research', async (req, res) => {
       process.env.SERVER_ENVIRONMENT = 'true';
     }
   }
+  
+  // If using local browser, set connect-existing to true and add necessary flags
+  if (useLocalBrowser) {
+    args.push('--connect-existing');
+    
+    // If chrome path is not provided, try to use a default path based on OS
+    if (!chromePath) {
+      const platform = process.platform;
+      let defaultChromePath = '';
+      
+      if (platform === 'darwin') {
+        // macOS
+        defaultChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      } else if (platform === 'win32') {
+        // Windows
+        defaultChromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+      } else if (platform === 'linux') {
+        // Linux
+        defaultChromePath = '/usr/bin/google-chrome';
+      }
+      
+      if (defaultChromePath) {
+        args.push('--chrome-path', defaultChromePath);
+      }
+    }
+    
+    // Add remote debugging port if not already specified
+    if (!extraChromiumArgs || !extraChromiumArgs.some(arg => arg.includes('remote-debugging-port'))) {
+      args.push('--chromium-arg=--remote-debugging-port=9222');
+    }
+  }
 
   console.log('Running command: python3', args.join(' '));
   
@@ -304,8 +336,8 @@ app.post('/api/run-research', async (req, res) => {
   let dataOutput = '';
   let errorOutput = '';
   
-  // If using embedded browser, try to connect to CDP
-  if (req.body.useEmbeddedBrowser) {
+  // If using embedded browser and not using local browser, try to connect to CDP
+  if (req.body.useEmbeddedBrowser && !useLocalBrowser) {
     // Wait a moment for the browser to start
     setTimeout(async () => {
       try {
