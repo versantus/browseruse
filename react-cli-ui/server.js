@@ -50,9 +50,27 @@ async function connectToCDP(port = 9222) {
     // Get the hostname dynamically
     const hostname = require('os').hostname();
     
-    // Get the list of available targets (pages)
-    const response = await axios.get(`http://${hostname}:${port}/json/list`);
-    const targets = response.data;
+    console.log(`Attempting to connect to CDP at http://${hostname}:${port}/json/list`);
+    
+    let response;
+    let targets;
+    
+    try {
+      // Try connecting using the hostname
+      response = await axios.get(`http://${hostname}:${port}/json/list`);
+      targets = response.data;
+      console.log(`Successfully connected to CDP using hostname: ${hostname}`);
+    } catch (error) {
+      console.log(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
+      console.log(`Trying fallback to localhost...`);
+      
+      // If that fails, try connecting to localhost
+      response = await axios.get(`http://localhost:${port}/json/list`);
+      targets = response.data;
+      console.log(`Successfully connected to CDP using localhost fallback`);
+    }
+    
+    console.log(`Found ${targets.length} browser targets`);
     
     if (targets && targets.length > 0) {
       // Find the first page target

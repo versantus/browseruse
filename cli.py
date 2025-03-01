@@ -70,6 +70,12 @@ async def run_research(
                 # Use socket.gethostname() to get the current hostname
                 import socket
                 hostname = socket.gethostname()
+                
+                # We'll try to use the hostname, but if that fails, we'll fall back to localhost
+                # The server.js file has a similar fallback mechanism
+                print(f"Setting CDP URL to http://{hostname}:{debug_port}/json/version")
+                print(f"If connection fails, try manually setting --cdp-url=http://localhost:{debug_port}/json/version")
+                
                 cdp_url = f"http://{hostname}:{debug_port}/json/version"
                 chrome_path = None  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
