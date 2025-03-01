@@ -21,17 +21,23 @@ npm install -g cross-env wait-on
 
 ### Running the Electron App
 
-Navigate to the react-cli-ui directory:
+1. Install Python dependencies first:
+```bash
+pip install -r requirements.txt
+playwright install
+```
+
+2. Navigate to the react-cli-ui directory:
 ```bash
 cd react-cli-ui
 ```
 
-Install dependencies:
+3. Install Node.js dependencies:
 ```bash
 npm install
 ```
 
-Run the app in development mode:
+4. Run the app in development mode:
 ```bash
 npm run electron-dev
 ```
