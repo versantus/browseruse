@@ -180,7 +180,7 @@ async function connectToCDP(port = 9222) {
             } else {
               clearInterval(captureInterval);
             }
-          }, 500); // Capture every 500ms
+          }, 200); // Capture every 200ms (increased from 500ms)
         });
         
         return target.webSocketDebuggerUrl;

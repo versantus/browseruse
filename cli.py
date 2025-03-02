@@ -45,6 +45,7 @@ async def run_research(
     proxy: Optional[str] = None,
     connect_existing: bool = False,
     embedded_browser: bool = False,
+    use_local_browser: bool = False,  # Add parameter for local browser mode
     stealth_mode: bool = True  # Stealth mode enabled by default
 ):
     """
@@ -177,6 +178,27 @@ async def run_research(
                 chromium_args.append('--window-size=1280,720')
             
         print("Running in embedded browser mode with args:", chromium_args)
+    # For local browser, force headless mode to hide the window
+    elif use_local_browser:
+        # Force headless to True for local browser to hide the window
+        headless = True
+        print("Local browser mode: Setting headless=True to hide the browser window")
+        
+        # Make sure we have the remote debugging port set for screenshots
+        if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
+            chromium_args.append('--remote-debugging-port=9222')
+            
+        # Add other necessary flags for headless mode
+        if not any([arg.startswith('--headless=') for arg in chromium_args]):
+            chromium_args.append('--headless=new')
+            
+        if not any([arg == '--disable-gpu' for arg in chromium_args]):
+            chromium_args.append('--disable-gpu')
+            
+        if not any([arg == '--window-size=1280,720' for arg in chromium_args]):
+            chromium_args.append('--window-size=1280,720')
+            
+        print("Running in local browser mode with args:", chromium_args)
     
     # Initialize browser with configurable options
     # Create a dictionary of kwargs to pass to BrowserConfig
@@ -248,6 +270,8 @@ def main():
                       help='Run with browser visible (default: headless/invisible)')
     visibility_group.add_argument('--embedded-browser', action='store_true',
                       help='Run browser in embedded mode (for iframe integration)')
+    visibility_group.add_argument('--use-local-browser', action='store_true',
+                      help='Use local browser (hidden) with screenshots in embedded view')
     
     # Add options for connecting to existing browser
     browser_group = parser.add_argument_group('Existing Browser Connection')
@@ -290,6 +314,7 @@ def main():
             proxy=args.proxy,
             connect_existing=args.connect_existing,
             embedded_browser=args.embedded_browser,
+            use_local_browser=args.use_local_browser,
             stealth_mode=not args.no_stealth_mode
         ))
     except KeyboardInterrupt:

@@ -230,6 +230,13 @@ function App() {
       prompt: ''
     });
     setTaskCompleted(false);
+    
+    // Focus on the prompt textarea after a short delay to ensure it's rendered
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 100);
   };
 
   return (
@@ -530,6 +537,8 @@ function App() {
           {/* New Task Button when browser is visible but task is completed */}
           {browserVisible && taskCompleted && (
             <div className="new-task-button-container">
+              <h3>Task Completed!</h3>
+              <p>Your research task has been completed successfully. You can start a new task or continue exploring the current results.</p>
               <button className="new-task-button" onClick={startNewTask}>Start New Task</button>
             </div>
           )}
