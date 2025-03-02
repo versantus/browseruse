@@ -312,10 +312,20 @@ export default function App() {
       );
     }
     
+    // Extract only the text that appears after the "=== Research Results ===" marker
+    const researchResultsMarker = "=== Research Results ===";
+    const markerIndex = result.indexOf(researchResultsMarker);
+    
+    let extractedText = result;
+    if (markerIndex !== -1) {
+      // Get the text after the marker and the following newline
+      extractedText = result.substring(markerIndex + researchResultsMarker.length).trim();
+    }
+    
     return (
       <div className="task-summary">
         <h3>Task completion summary</h3>
-        <p>{result}</p>
+        <p>{extractedText}</p>
       </div>
     );
   };
