@@ -330,9 +330,10 @@ app.post('/api/run-research', async (req, res) => {
       try {
         broadcastCliOutput(`Starting Chrome at: ${actualChromePath}`);
         
-        // Start Chrome with remote debugging
+        // Start Chrome with remote debugging in headless mode
         const chromeArgs = [
           '--remote-debugging-port=9222',
+          '--headless=new',
           '--no-first-run',
           '--no-default-browser-check',
           '--user-data-dir=./ChromeUserData'
@@ -439,6 +440,7 @@ app.post('/api/run-research', async (req, res) => {
       // For local browser, we need to wait longer and retry a few times
       const maxRetries = useLocalBrowser ? 5 : 1;
       let retryCount = 0;
+      // Initialize connected variable to track connection status
       let connected = false;
       
       while (retryCount < maxRetries && !connected) {
