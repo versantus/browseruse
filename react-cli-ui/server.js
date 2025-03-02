@@ -7,6 +7,10 @@ const fs = require('fs');
 const WebSocket = require('ws');
 const http = require('http');
 const axios = require('axios');
+const os = require('os');
+
+// Get the hostname dynamically
+const hostname = os.hostname();
 
 const app = express();
 const server = http.createServer(app);
