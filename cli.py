@@ -94,48 +94,100 @@ async def run_research(
                 # Set the CDP URL to connect to this instance
                 # Use socket.gethostname() to get the current hostname
                 import socket
-                hostname = socket.gethostname()
+                import requests
+                import time
+                from urllib.parse import urlparse
+                
+                # Try to get the hostname, with fallback to localhost
+                try:
+                    hostname = socket.gethostname()
+                    print(f"Got system hostname: {hostname}")
+                    
+                    # Try to resolve the hostname to make sure it's valid
+                    try:
+                        socket.gethostbyname(hostname)
+                        print(f"Successfully resolved hostname {hostname} to an IP address")
+                    except socket.gaierror as e:
+                        print(f"Warning: Could not resolve hostname {hostname}: {e}")
+                        print("This might cause connection issues. Will try using it anyway.")
+                except Exception as e:
+                    print(f"Error getting hostname: {e}")
+                    hostname = "localhost"
+                    print(f"Falling back to default hostname: {hostname}")
                 
                 # We'll try to use the hostname, but if that fails, we'll fall back to localhost
                 # The server.js file has a similar fallback mechanism
                 print(f"Setting CDP URL to http://{hostname}:{debug_port}/json/version")
                 print(f"If connection fails, try manually setting --cdp-url=http://localhost:{debug_port}/json/version")
                 
-                # Try to connect to the CDP URL to verify it's working
-                import requests
-                import time
+                # Give Chrome more time to initialize
+                print("Waiting for Chrome to initialize...")
+                time.sleep(3)
                 
-                # Give Chrome a bit more time to initialize
-                time.sleep(2)
+                # Define the endpoints to try
+                endpoints = [
+                    {"url": f"http://{hostname}:{debug_port}/json/version", "name": "hostname version"},
+                    {"url": f"http://localhost:{debug_port}/json/version", "name": "localhost version"},
+                    {"url": f"http://{hostname}:{debug_port}/json/list", "name": "hostname list"},
+                    {"url": f"http://localhost:{debug_port}/json/list", "name": "localhost list"}
+                ]
                 
-                # Try to connect to the CDP URL
-                cdp_url = f"http://{hostname}:{debug_port}/json/version"
-                try:
-                    print(f"Testing connection to CDP URL: {cdp_url}")
-                    response = requests.get(cdp_url, timeout=5)
-                    if response.status_code == 200:
-                        print(f"Successfully connected to CDP URL: {cdp_url}")
-                    else:
-                        print(f"Failed to connect to CDP URL: {cdp_url}, status code: {response.status_code}")
-                        print(f"Trying localhost fallback...")
-                        cdp_url = f"http://localhost:{debug_port}/json/version"
-                        response = requests.get(cdp_url, timeout=5)
-                        if response.status_code == 200:
-                            print(f"Successfully connected to localhost CDP URL: {cdp_url}")
-                        else:
-                            print(f"Failed to connect to localhost CDP URL: {cdp_url}, status code: {response.status_code}")
-                except Exception as e:
-                    print(f"Error connecting to CDP URL: {e}")
-                    print(f"Trying localhost fallback...")
-                    cdp_url = f"http://localhost:{debug_port}/json/version"
+                # Try each endpoint until one works
+                cdp_url = None
+                connection_timeout = 5  # seconds
+                
+                for endpoint in endpoints:
                     try:
-                        response = requests.get(cdp_url, timeout=5)
+                        url = endpoint["url"]
+                        name = endpoint["name"]
+                        print(f"Testing connection to CDP endpoint ({name}): {url}")
+                        
+                        response = requests.get(url, timeout=connection_timeout)
                         if response.status_code == 200:
-                            print(f"Successfully connected to localhost CDP URL: {cdp_url}")
+                            print(f"✅ Successfully connected to CDP endpoint ({name}): {url}")
+                            
+                            # Validate the response content
+                            try:
+                                response_data = response.json()
+                                if isinstance(response_data, dict) or isinstance(response_data, list):
+                                    print(f"Response contains valid JSON data")
+                                    cdp_url = url
+                                    
+                                    # If this is a /json/list endpoint, use the first target's webSocketDebuggerUrl
+                                    if url.endswith('/json/list') and isinstance(response_data, list) and len(response_data) > 0:
+                                        if 'webSocketDebuggerUrl' in response_data[0]:
+                                            print(f"Found WebSocket debugger URL in response")
+                                        else:
+                                            print(f"No WebSocket debugger URL found in response")
+                                    
+                                    # If we found a working endpoint, break the loop
+                                    break
+                                else:
+                                    print(f"Response does not contain valid JSON data")
+                            except ValueError:
+                                print(f"Response is not valid JSON")
                         else:
-                            print(f"Failed to connect to localhost CDP URL: {cdp_url}, status code: {response.status_code}")
+                            print(f"❌ Failed to connect to CDP endpoint ({name}): {url}, status code: {response.status_code}")
+                    except requests.exceptions.Timeout:
+                        print(f"❌ Connection to CDP endpoint ({name}) timed out after {connection_timeout} seconds")
+                    except requests.exceptions.ConnectionError as e:
+                        print(f"❌ Connection error to CDP endpoint ({name}): {e}")
                     except Exception as e:
-                        print(f"Error connecting to localhost CDP URL: {e}")
+                        print(f"❌ Unexpected error connecting to CDP endpoint ({name}): {e}")
+                
+                if cdp_url:
+                    print(f"✅ Successfully found working CDP URL: {cdp_url}")
+                else:
+                    print(f"❌ Failed to connect to any CDP endpoint. Using default URL as fallback.")
+                    cdp_url = f"http://localhost:{debug_port}/json/version"
+                    print(f"Fallback CDP URL: {cdp_url}")
+                
+                # Parse the URL to extract hostname and port for logging
+                parsed_url = urlparse(cdp_url)
+                final_hostname = parsed_url.hostname or "localhost"
+                final_port = parsed_url.port or debug_port
+                
+                print(f"Final CDP connection will use hostname: {final_hostname}, port: {final_port}")
                 
                 chrome_path = ""  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:

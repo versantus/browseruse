@@ -3,12 +3,29 @@ const path = require('path');
 const url = require('url');
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
+const axios = require('axios');
+
+// Import CDP initialization functions from electron.js
+let cdpFunctions;
+try {
+  cdpFunctions = require('./public/electron.js');
+} catch (error) {
+  console.error('Failed to import CDP functions from electron.js:', error.message);
+  cdpFunctions = {
+    initializeCDP: async () => ({ success: false, error: 'CDP functions not available' }),
+    startChromeWithDebugging: async () => ({ success: false, error: 'CDP functions not available' })
+  };
+}
 
 // Keep a global reference of the window object to avoid garbage collection
 let mainWindow;
 
 // Keep a reference to the Express server process
 let serverProcess = null;
+
+// Keep a reference to the Chrome process
+let chromeProcess = null;
 
 function createWindow() {
   // Create the browser window
@@ -122,23 +139,86 @@ ipcMain.handle('get-app-path', () => {
 });
 
 // Handle backend configuration
-ipcMain.handle('set-backend-config', (event, config) => {
-  // Store the backend configuration for later use
-  global.backendConfig = config;
-  return true;
+ipcMain.handle('set-backend-config', async (event, config) => {
+  try {
+    // Store the backend configuration for later use
+    global.backendConfig = config;
+    
+    // If connecting to existing Chrome and we have a Chrome path, try to start it
+    if (config.connectExisting && config.chromePath) {
+      // Stop any existing Chrome process
+      if (chromeProcess) {
+        try {
+          chromeProcess.kill();
+        } catch (error) {
+          console.error('Error stopping existing Chrome process:', error.message);
+        }
+        chromeProcess = null;
+      }
+      
+      // Start Chrome with debugging enabled
+      const result = await cdpFunctions.startChromeWithDebugging(config.chromePath, 9222);
+      if (result.success) {
+        chromeProcess = result.process;
+        console.log('Chrome started successfully with CDP URL:', result.cdpUrl);
+        
+        // Update the CDP URL in the config
+        global.backendConfig.cdpUrl = result.cdpUrl;
+        
+        return { success: true, cdpUrl: result.cdpUrl };
+      } else {
+        console.error('Failed to start Chrome:', result.error);
+        return { success: false, error: result.error };
+      }
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting backend config:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 // Handle selecting Chrome path
 ipcMain.handle('select-chrome-path', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [
-      { name: 'Executables', extensions: ['exe', '*'] }
-    ]
-  });
-  
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'Executables', extensions: ['exe', '*'] }
+      ],
+      title: 'Select Chrome Executable'
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      const chromePath = result.filePaths[0];
+      
+      // Verify that the selected file exists
+      if (fs.existsSync(chromePath)) {
+        console.log('Selected Chrome path:', chromePath);
+        return chromePath;
+      } else {
+        console.error('Selected Chrome path does not exist:', chromePath);
+        dialog.showErrorBox('Invalid Chrome Path', 'The selected Chrome executable does not exist.');
+        return null;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error selecting Chrome path:', error.message);
+    dialog.showErrorBox('Error', `Failed to select Chrome path: ${error.message}`);
+    return null;
   }
-  return null;
+});
+
+// Handle testing CDP connection
+ipcMain.handle('test-cdp-connection', async (event, port = 9222) => {
+  try {
+    console.log('Testing CDP connection on port:', port);
+    const result = await cdpFunctions.initializeCDP(port);
+    return result;
+  } catch (error) {
+    console.error('Error testing CDP connection:', error.message);
+    return { success: false, error: error.message };
+  }
 });

@@ -9,8 +9,16 @@ const http = require('http');
 const axios = require('axios');
 const os = require('os');
 
-// Get the hostname dynamically
-const hostname = os.hostname();
+// Get the hostname dynamically with fallback
+let hostname;
+try {
+  hostname = os.hostname();
+  console.log(`Using hostname: ${hostname}`);
+} catch (error) {
+  console.error(`Error getting hostname: ${error.message}`);
+  hostname = 'localhost';
+  console.log(`Falling back to hostname: ${hostname}`);
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -62,7 +70,7 @@ async function connectToCDP(port = 9222) {
     
     try {
       // First try using the hostname
-      response = await axios.get(`http://${hostname}:${port}/json/list`);
+      response = await axios.get(`http://${hostname}:${port}/json/list`, { timeout: 5000 });
       targets = response.data;
       console.log(`Successfully connected to CDP using hostname: ${hostname}`);
       broadcastCliOutput(`Successfully connected to CDP using hostname: ${hostname}`);
@@ -70,12 +78,27 @@ async function connectToCDP(port = 9222) {
       console.error(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
       broadcastCliOutput(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
       
-      // If that fails, try connecting to localhost
-      broadcastCliOutput(`Trying fallback to localhost...`);
-      response = await axios.get(`http://localhost:${port}/json/list`);
-      targets = response.data;
-      console.log(`Successfully connected to CDP using localhost fallback`);
-      broadcastCliOutput(`Successfully connected to CDP using localhost fallback`);
+      try {
+        // If that fails, try connecting to localhost
+        broadcastCliOutput(`Trying fallback to localhost...`);
+        response = await axios.get(`http://localhost:${port}/json/list`, { timeout: 5000 });
+        targets = response.data;
+        console.log(`Successfully connected to CDP using localhost fallback`);
+        broadcastCliOutput(`Successfully connected to CDP using localhost fallback`);
+      } catch (localhostError) {
+        // If both hostname and localhost fail, throw a comprehensive error
+        const errorMsg = `Failed to connect to CDP using both hostname (${hostname}) and localhost. Original error: ${error.message}, Localhost error: ${localhostError.message}`;
+        console.error(errorMsg);
+        broadcastCliOutput(`Error connecting to CDP: Connection failed with both hostname and localhost`);
+        throw new Error(errorMsg);
+      }
+    }
+    
+    if (!targets || !Array.isArray(targets)) {
+      const errorMsg = 'Invalid response from CDP: targets is not an array';
+      console.error(errorMsg);
+      broadcastCliOutput(`Error connecting to CDP: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
     
     console.log(`Found ${targets.length} browser targets`);
@@ -219,6 +242,38 @@ async function connectToCDP(port = 9222) {
     
     return null;
   }
+}
+
+// Function to retry CDP connection with exponential backoff
+async function retryConnectToCDP(maxRetries = 3, initialDelay = 1000, port = 9222) {
+  let retryCount = 0;
+  let delay = initialDelay;
+  
+  while (retryCount < maxRetries) {
+    try {
+      const result = await connectToCDP(port);
+      if (result) {
+        console.log(`Successfully connected to CDP after ${retryCount} retries`);
+        broadcastCliOutput(`Successfully connected to CDP after ${retryCount} retries`);
+        return result;
+      }
+    } catch (error) {
+      console.error(`Retry ${retryCount + 1}/${maxRetries} failed: ${error.message}`);
+      broadcastCliOutput(`Retry ${retryCount + 1}/${maxRetries} failed: ${error.message}`);
+    }
+    
+    retryCount++;
+    if (retryCount < maxRetries) {
+      console.log(`Waiting ${delay}ms before retry ${retryCount + 1}/${maxRetries}`);
+      broadcastCliOutput(`Waiting ${delay}ms before retry ${retryCount + 1}/${maxRetries}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay *= 2; // Exponential backoff
+    }
+  }
+  
+  console.error(`Failed to connect to CDP after ${maxRetries} retries`);
+  broadcastCliOutput(`Failed to connect to CDP after ${maxRetries} retries`);
+  return null;
 }
 
 // Endpoint for the embedded browser
@@ -558,36 +613,33 @@ app.post('/api/run-research', async (req, res) => {
     broadcastCliOutput(`Waiting ${waitTime/1000} seconds for browser to initialize...`);
     
     setTimeout(async () => {
-      // For local browser, we need to wait longer and retry a few times
+      // Use the retry mechanism with exponential backoff
       const maxRetries = useLocalBrowser ? 10 : 5;
-      let retryCount = 0;
-      let connected = false;
+      const initialDelay = 3000; // 3 seconds initial delay
       
-      while (retryCount < maxRetries && !connected) {
-        try {
-          // This will start the screenshot capture process
-          broadcastCliOutput(`Connecting to browser for screenshots (attempt ${retryCount + 1}/${maxRetries})...`);
-          await connectToCDP(9222);
-          broadcastCliOutput("Connected to browser for screenshots");
-          connected = true;
-          
-          // If we're running in headless mode on a server, let the user know
-          if (process.env.SERVER_ENVIRONMENT === 'true') {
-            broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
-          } else if (useLocalBrowser) {
-            broadcastCliOutput("Connected to local browser. Screenshots will be captured and displayed in the iframe.");
-          }
-        } catch (error) {
-          console.error(`Error connecting to browser (attempt ${retryCount + 1}/${maxRetries}):`, error);
-          broadcastCliOutput(`Error connecting to browser: ${error.message}`);
-          
-          if (retryCount < maxRetries - 1) {
-            broadcastCliOutput(`Retrying in 3 seconds...`);
-            // Wait 3 seconds before retrying
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-          
-          retryCount++;
+      broadcastCliOutput(`Connecting to browser for screenshots with ${maxRetries} retries...`);
+      const webSocketUrl = await retryConnectToCDP(maxRetries, initialDelay, 9222);
+      
+      if (webSocketUrl) {
+        broadcastCliOutput("Connected to browser for screenshots");
+        
+        // If we're running in headless mode on a server, let the user know
+        if (process.env.SERVER_ENVIRONMENT === 'true') {
+          broadcastCliOutput("Running in headless mode on server. Screenshots will be captured and displayed.");
+        } else if (useLocalBrowser) {
+          broadcastCliOutput("Connected to local browser. Screenshots will be captured and displayed in the iframe.");
+        }
+      } else {
+        broadcastCliOutput("Failed to connect to browser after multiple attempts.");
+        
+        // If we're running on a server, provide additional troubleshooting info
+        if (process.env.SERVER_ENVIRONMENT === 'true') {
+          broadcastCliOutput("Note: When running on a Linux server without a display, the browser runs in headless mode.");
+          broadcastCliOutput("Screenshots should still be captured and displayed in the iframe.");
+          broadcastCliOutput("If no screenshots appear, check that the browser is properly initialized with --headless=new flag.");
+        } else if (useLocalBrowser) {
+          broadcastCliOutput("Make sure Chrome is running with remote debugging enabled on port 9222.");
+          broadcastCliOutput("You can manually start Chrome with: chrome --remote-debugging-port=9222");
         }
       }
       
