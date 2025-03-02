@@ -333,8 +333,64 @@ export default function App() {
     
     // Try to extract the extracted_content from ActionResult
     try {
+      console.log('Raw result received in formatTaskSummary:', result);
+      
+      // Check for the [1] prefix that appears in the console output
+      let processedResult = result;
+      if (result.startsWith('[1]')) {
+        processedResult = result.substring(3).trim();
+        console.log('Removed [1] prefix, now processing:', processedResult);
+      }
+      
+      // Extract all ActionResult objects and find the one with is_done=True
+      const actionResultRegex = /ActionResult\([^)]+\)/g;
+      const actionResults = processedResult.match(actionResultRegex);
+      
+      if (actionResults) {
+        console.log('Found ActionResult objects:', actionResults.length);
+        
+        // Find the one with is_done=True
+        const isDoneTrue = actionResults.find(ar => ar.includes('is_done=True') || ar.includes('is_done=true'));
+        console.log('ActionResult with is_done=True:', isDoneTrue || 'Not found');
+        
+        // Extract the extracted_content from the is_done=True ActionResult
+        if (isDoneTrue) {
+          const extractedContent = isDoneTrue.match(/extracted_content='([^']+)'/);
+          if (extractedContent && extractedContent[1]) {
+            console.log('Extracted content from is_done=True ActionResult:', extractedContent[1]);
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {extractedContent[1].split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          
+          // Try with double quotes if single quotes didn't work
+          const extractedContentDoubleQuotes = isDoneTrue.match(/extracted_content="([^"]+)"/);
+          if (extractedContentDoubleQuotes && extractedContentDoubleQuotes[1]) {
+            console.log('Extracted content from is_done=True ActionResult (double quotes):', extractedContentDoubleQuotes[1]);
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {extractedContentDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+        }
+      }
+      
+      // If the above approach didn't work, try the original regex patterns
       // Check for the user's example format directly (with single quotes)
-      const userExampleMatch = result.match(/ActionResult\(is_done=True,\s*extracted_content='([^']+)'/);
+      const userExampleMatch = processedResult.match(/ActionResult\(is_done=True,\s*extracted_content='([^']+)'/);
       if (userExampleMatch && userExampleMatch[1]) {
         console.log('Matched user example format (single quotes):', userExampleMatch[1]);
         return (
@@ -350,7 +406,7 @@ export default function App() {
       }
       
       // Check for the user's example format with double quotes
-      const userExampleMatchDoubleQuotes = result.match(/ActionResult\(is_done=True,\s*extracted_content="([^"]+)"/);
+      const userExampleMatchDoubleQuotes = processedResult.match(/ActionResult\(is_done=True,\s*extracted_content="([^"]+)"/);
       if (userExampleMatchDoubleQuotes && userExampleMatchDoubleQuotes[1]) {
         console.log('Matched user example format (double quotes):', userExampleMatchDoubleQuotes[1]);
         return (
@@ -366,7 +422,7 @@ export default function App() {
       }
       
       // Check for the 'done' field in all_model_outputs (with single quotes)
-      const doneTextMatch = result.match(/{'done':\s*{'text':\s*'([^']+)'}/);
+      const doneTextMatch = processedResult.match(/{'done':\s*{'text':\s*'([^']+)'}/);
       if (doneTextMatch && doneTextMatch[1]) {
         console.log('Matched done text format (single quotes):', doneTextMatch[1]);
         return (
@@ -382,7 +438,7 @@ export default function App() {
       }
       
       // Check for the 'done' field in all_model_outputs (with double quotes)
-      const doneTextMatchDoubleQuotes = result.match(/\{"done":\s*\{"text":\s*"([^"]+)"\}/);
+      const doneTextMatchDoubleQuotes = processedResult.match(/\{"done":\s*\{"text":\s*"([^"]+)"\}/);
       if (doneTextMatchDoubleQuotes && doneTextMatchDoubleQuotes[1]) {
         console.log('Matched done text format (double quotes):', doneTextMatchDoubleQuotes[1]);
         return (
@@ -400,8 +456,8 @@ export default function App() {
       // First, try to parse the result as JSON directly
       try {
         // Check if the result looks like a JSON string
-        if (result.trim().startsWith('{') && result.trim().endsWith('}')) {
-          const jsonResult = JSON.parse(result);
+        if (processedResult.trim().startsWith('{') && processedResult.trim().endsWith('}')) {
+          const jsonResult = JSON.parse(processedResult);
           
           // Check for all_results format in AgentHistoryList
           if (jsonResult.all_results && Array.isArray(jsonResult.all_results)) {
@@ -432,7 +488,7 @@ export default function App() {
       }
       
       // If direct JSON parsing fails, try to extract JSON from the string
-      const jsonMatch = result.match(/AgentHistoryList\(([^)]+)\)/);
+      const jsonMatch = processedResult.match(/AgentHistoryList\(([^)]+)\)/);
       if (jsonMatch && jsonMatch[1]) {
         try {
           // Convert the Python-like syntax to JSON-like string for parsing
