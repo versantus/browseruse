@@ -261,6 +261,23 @@ export default function App() {
     }, 100);
   };
   
+  // Function to refine the current task
+  const refineTask = () => {
+    setBrowserVisible(false);
+    setResult(null);
+    setError(null);
+    setCliOutput([]);
+    setTaskCompleted(false);
+    
+    // Keep the current prompt
+    // Focus on the prompt textarea after a short delay to ensure it's rendered
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 100);
+  };
+  
   // Function to format information results for better readability
   const formatInformationResults = (result: string): ReactElement => {
     // Handle empty or error results
@@ -286,7 +303,7 @@ export default function App() {
     
     return (
       <div className="formatted-information">
-        {paragraphs.map((paragraph, index) => {
+        {paragraphs.map((paragraph: string, index: number) => {
           // Check if this paragraph looks like a heading (shorter and ends with a colon)
           const isHeading = paragraph.length < 100 && paragraph.trim().endsWith(':');
           
@@ -306,13 +323,15 @@ export default function App() {
     if (!result || result.trim() === '' || result.includes("Unexpected error")) {
       return (
         <div className="task-summary">
-          <h3>Task completion summary</h3>
-          <p>The task was attempted but encountered an error. Please check the CLI output for details.</p>
+          <h3>Task summary</h3>
+          <div className="formatted-content">
+            <p>The task was attempted but encountered an error. Please check the CLI output for details.</p>
+          </div>
         </div>
       );
     }
     
-    // Try to extract the 'done.text' value from the ActionResult
+    // Try to extract the extracted_content from ActionResult
     try {
       // First, try to parse the result as JSON directly
       try {
@@ -320,35 +339,25 @@ export default function App() {
         if (result.trim().startsWith('{') && result.trim().endsWith('}')) {
           const jsonResult = JSON.parse(result);
           
-          // Check for AgentHistoryList format as shown in Nik's example
-          if (jsonResult.all_model_outputs && Array.isArray(jsonResult.all_model_outputs)) {
-            // Find the last output with 'done'
-            for (let i = jsonResult.all_model_outputs.length - 1; i >= 0; i--) {
-              const output = jsonResult.all_model_outputs[i];
-              if (output.done && output.done.text) {
-                return (
-                  <div className="task-summary">
-                    <h3>Task completion summary</h3>
-                    <p>{output.done.text}</p>
-                  </div>
-                );
-              }
-            }
-          }
-          
-          // Check for all_results format
+          // Check for all_results format in AgentHistoryList
           if (jsonResult.all_results && Array.isArray(jsonResult.all_results)) {
-            // Find the last result with is_done=true
-            for (let i = jsonResult.all_results.length - 1; i >= 0; i--) {
-              const res = jsonResult.all_results[i];
-              if (res.is_done === true && res.extracted_content) {
-                return (
-                  <div className="task-summary">
-                    <h3>Task completion summary</h3>
-                    <p>{res.extracted_content}</p>
+            // Find all results with extracted_content and format them nicely
+            const formattedResults = jsonResult.all_results
+              .filter((res: any) => res.extracted_content)
+              .map((res: any) => res.extracted_content)
+              .join('\n');
+            
+            if (formattedResults) {
+              return (
+                <div className="task-summary">
+                  <h3>Task summary</h3>
+                  <div className="formatted-content">
+                    {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
+                      <p key={index}>{paragraph}</p>
+                    ))}
                   </div>
-                );
-              }
+                </div>
+              );
             }
           }
         }
@@ -360,22 +369,39 @@ export default function App() {
       const jsonMatch = result.match(/AgentHistoryList\(([^)]+)\)/);
       if (jsonMatch && jsonMatch[1]) {
         try {
-          // Convert the Python-like syntax to JSON
+          // Convert the Python-like syntax to JSON-like string for parsing
           let jsonStr = jsonMatch[1]
             .replace(/'/g, '"')
             .replace(/True/g, 'true')
             .replace(/False/g, 'false')
             .replace(/None/g, 'null');
           
-          // Try to extract the done.text value using regex
-          const doneTextMatch = jsonStr.match(/"done":\s*{\s*"text":\s*"([^"]+)"/);
-          if (doneTextMatch && doneTextMatch[1]) {
-            return (
-              <div className="task-summary">
-                <h3>Task completion summary</h3>
-                <p>{doneTextMatch[1]}</p>
-              </div>
-            );
+          // Extract all extracted_content values using regex
+          const extractedContentMatches = jsonStr.match(/extracted_content="([^"]+)"/g) || 
+                                         jsonStr.match(/extracted_content='([^']+)'/g);
+          if (extractedContentMatches && extractedContentMatches.length > 0) {
+            // Extract the actual content from each match and join them
+            const formattedResults = extractedContentMatches
+              .map((match: string) => {
+                const content = match.match(/extracted_content="([^"]+)"/) || 
+                               match.match(/extracted_content='([^']+)'/);
+                return content ? content[1] : '';
+              })
+              .filter(content => content) // Remove empty strings
+              .join('\n\n'); // Use double newlines for better readability
+            
+            if (formattedResults) {
+              return (
+                <div className="task-summary">
+                  <h3>Task summary</h3>
+                  <div className="formatted-content">
+                    {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
+                      <p key={index}>{paragraph}</p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
           }
         } catch (e) {
           console.log('Error parsing AgentHistoryList:', e);
@@ -398,8 +424,12 @@ export default function App() {
     
     return (
       <div className="task-summary">
-        <h3>Task completion summary</h3>
-        <p>{extractedText}</p>
+        <h3>Task summary</h3>
+        <div className="formatted-content">
+          {extractedText.split('\n\n').map((paragraph: string, index: number) => (
+            <p key={index}>{paragraph}</p>
+          ))}
+        </div>
       </div>
     );
   };
@@ -470,11 +500,12 @@ export default function App() {
             )}
           </div>
           
-          {/* Top New Task Button - only shown when task is completed */}
+          {/* Top Task Buttons - only shown when task is completed */}
           {taskCompleted && (
             <div className="top-new-task-button">
               <span className="completion-message">Task completed!</span>
-              <button onClick={startNewTask}>Start new task</button>
+              <button className="refine-task" onClick={refineTask}>Refine task</button>
+              <button className="new-task" onClick={startNewTask}>Start new task</button>
             </div>
           )}
           
@@ -717,7 +748,8 @@ export default function App() {
               )}
               {taskCompleted && (
                 <div className="new-task-button">
-                  <button onClick={startNewTask}>Start new task</button>
+                  <button className="refine-task" onClick={refineTask}>Refine task</button>
+                  <button className="new-task" onClick={startNewTask}>Start new task</button>
                 </div>
               )}
             </div>
