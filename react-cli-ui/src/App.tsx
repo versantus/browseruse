@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent, ReactElement } from 'react';
 import axios from 'axios';
 import Iframe from 'react-iframe';
 import './App.css';
@@ -37,7 +37,20 @@ interface CliOutput {
   timestamp: number;
 }
 
-function App() {
+// Function to determine if a prompt is asking for information or task completion
+const isInformationQuery = (prompt: string): boolean => {
+  const informationKeywords = ['what', 'who', 'when', 'where', 'why', 'how', 'explain', 'describe', 'tell me about', 'information about'];
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Check if the prompt starts with an information keyword
+  return informationKeywords.some(keyword => 
+    lowerPrompt.startsWith(keyword) || 
+    lowerPrompt.includes(`${keyword}?`) || 
+    lowerPrompt.includes(` ${keyword} `)
+  );
+};
+
+export default function App() {
   const [formData, setFormData] = useState<FormData>({
     prompt: '',
     noHeadless: false,
@@ -55,6 +68,9 @@ function App() {
   
   // State to track if running in Electron
   const [isElectron, setIsElectron] = useState(false);
+  
+  // State to track if the current query is an information query
+  const [isInfoQuery, setIsInfoQuery] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -80,12 +96,7 @@ function App() {
       // Check if the message is from our iframe
       if (event.data && event.data.type === 'cli-output') {
         addCliOutput(event.data.data);
-        
-        // Check if the task is completed
-        if (event.data.data.includes("Task completed successfully") || 
-            event.data.data.includes("Research task completed.")) {
-          setTaskCompleted(true);
-        }
+        // Note: Task completion is now handled in the addCliOutput function
       }
     };
     
@@ -145,9 +156,20 @@ function App() {
   // Function to add CLI output
   const addCliOutput = (text: string) => {
     setCliOutput(prev => [...prev, { text, timestamp: Date.now() }]);
+    
+    // Check if the task is completed
+    if (text.includes("Task completed successfully") || 
+        text.includes("Research task completed.") ||
+        text.includes("Process completed with exit code:")) {
+      setTaskCompleted(true);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // Determine if this is an information query
+    const isInfo = isInformationQuery(formData.prompt);
+    setIsInfoQuery(isInfo);
+    
     setTaskCompleted(false);
     e.preventDefault();
     setIsLoading(true);
@@ -237,6 +259,65 @@ function App() {
         textareaRef.current.focus();
       }
     }, 100);
+  };
+  
+  // Function to format information results for better readability
+  const formatInformationResults = (result: string): ReactElement => {
+    // Handle empty or error results
+    if (!result || result.trim() === '' || result.includes("Unexpected error")) {
+      return (
+        <div className="formatted-information">
+          <p>No information available. There may have been an error with the research task.</p>
+        </div>
+      );
+    }
+    
+    // Split the result into paragraphs
+    const paragraphs = result.split('\n\n').filter(p => p.trim());
+    
+    // If no paragraphs after filtering, show a fallback message
+    if (paragraphs.length === 0) {
+      return (
+        <div className="formatted-information">
+          <p>Information was requested but no detailed results were found.</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="formatted-information">
+        {paragraphs.map((paragraph, index) => {
+          // Check if this paragraph looks like a heading (shorter and ends with a colon)
+          const isHeading = paragraph.length < 100 && paragraph.trim().endsWith(':');
+          
+          return isHeading ? (
+            <h3 key={index}>{paragraph}</h3>
+          ) : (
+            <p key={index}>{paragraph}</p>
+          );
+        })}
+      </div>
+    );
+  };
+  
+  // Function to create a summary for task completion results
+  const formatTaskSummary = (result: string): ReactElement => {
+    // Handle empty or error results
+    if (!result || result.trim() === '' || result.includes("Unexpected error")) {
+      return (
+        <div className="task-summary">
+          <h3>Task completion summary</h3>
+          <p>The task was attempted but encountered an error. Please check the CLI output for details.</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="task-summary">
+        <h3>Task completion summary</h3>
+        <p>{result}</p>
+      </div>
+    );
   };
 
   return (
@@ -521,25 +602,42 @@ function App() {
             </div>
           )}
           
+          {/* Top New Task Button - only shown when task is completed */}
+          {taskCompleted && (
+            <div className="top-new-task-button">
+              <span className="completion-message">Task completed!</span>
+              <button onClick={startNewTask}>Start new task</button>
+            </div>
+          )}
+          
           {/* Results Display */}
           {result && !browserVisible && (
             <div className="result-container">
-              <h2>Research Results</h2>
-              <pre>{result}</pre>
+              <h2>Research results</h2>
+              {isInfoQuery ? (
+                formatInformationResults(result)
+              ) : (
+                formatTaskSummary(result)
+              )}
               {taskCompleted && (
                 <div className="new-task-button">
-                  <button onClick={startNewTask}>Start New Task</button>
+                  <button onClick={startNewTask}>Start new task</button>
                 </div>
               )}
             </div>
           )}
           
-          {/* New Task Button when browser is visible but task is completed */}
+          {/* Task Summary and New Task Button when browser is visible but task is completed */}
           {browserVisible && taskCompleted && (
             <div className="new-task-button-container">
-              <h3>Task Completed!</h3>
-              <p>Your research task has been completed successfully. You can start a new task or continue exploring the current results.</p>
-              <button className="new-task-button" onClick={startNewTask}>Start New Task</button>
+              <h3>Task completed!</h3>
+              {isInfoQuery ? (
+                <p>Your research has been completed successfully. The information you requested is displayed above.</p>
+              ) : (
+                <p>Your task has been completed successfully. Here's a summary of what was done:</p>
+              )}
+              {isInfoQuery ? formatInformationResults(result || '') : formatTaskSummary(result || '')}
+              <button className="new-task-button" onClick={startNewTask}>Start new task</button>
             </div>
           )}
         </div>
@@ -547,5 +645,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
