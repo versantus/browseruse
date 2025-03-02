@@ -1,0 +1,27 @@
+appId: com.versantus.browseruse
+productName: Browser Use
+directories:
+  output: dist
+  buildResources: icons
+files:
+  - build/**/*
+  - node_modules/**/*
+  - main.js
+  - preload.js
+  - server.js
+extraResources:
+  - from: ../
+    to: extraResources
+    filter:
+      - cli.py
+      - requirements.txt
+mac:
+  category: public.app-category.developer-tools
+  icon: icons/icon.icns
+win:
+  target: nsis
+  icon: icons/icon.ico
+linux:
+  target: AppImage
+  category: Development
+  icon: icons/icon.png

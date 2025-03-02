@@ -13,7 +13,7 @@
     "@types/react-dom": "^19.0.4",
     "axios": "^1.8.1",
     "body-parser": "^1.20.3",
-    "concurrently": "^9.1.2",
+    "chalk": "^5.4.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "react": "^19.0.0",
@@ -26,12 +26,17 @@
   },
   "scripts": {
     "start": "PORT=3003 react-scripts start",
-    "build": "react-scripts build",
+    "build": "react-scripts build && cp public/electron.js build/",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "server": "node server.js",
     "dev": "concurrently \"npm run server\" \"npm start\"",
-    "prod": "npm run build && node server.js"
+    "prod": "npm run build && node server.js",
+    "electron-dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3003 && cross-env ELECTRON_START_URL=http://localhost:3003 electron .\"",
+    "electron": "electron .",
+    "electron-build": "npm run build && electron-builder --publish=never",
+    "electron-pack": "electron-builder --dir",
+    "electron-dist": "electron-builder"
   },
   "eslintConfig": {
     "extends": [
@@ -50,5 +55,52 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "main": "public/electron.js",
+  "build": {
+    "appId": "com.versantus.browseruse",
+    "productName": "Browser Use",
+    "files": [
+      "build/**/*",
+      "node_modules/**/*",
+      "main.js",
+      "preload.js",
+      "server.js",
+      "public/electron.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "extraResources",
+        "filter": [
+          "cli.py",
+          "requirements.txt"
+        ]
+      }
+    ],
+    "directories": {
+      "buildResources": "icons"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "icons/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icons/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development",
+      "icon": "icons/icon.png"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.33.5",
+    "wait-on": "^8.0.2"
   }
 }

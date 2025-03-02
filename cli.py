@@ -2,7 +2,7 @@
 import os
 import asyncio
 import argparse
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
@@ -38,13 +38,14 @@ async def run_research(
     prompt: str, 
     headless: bool = True, 
     disable_security: bool = True,
-    extra_chromium_args: List[str] = None,
-    chrome_path: str = None, 
-    wss_url: str = None, 
-    cdp_url: str = None,
-    proxy: str = None,
+    extra_chromium_args: Optional[List[str]] = None,
+    chrome_path: Optional[str] = None, 
+    wss_url: Optional[str] = None, 
+    cdp_url: Optional[str] = None,
+    proxy: Optional[str] = None,
     connect_existing: bool = False,
     embedded_browser: bool = False,
+    use_local_browser: bool = False,  # Add parameter for local browser mode
     stealth_mode: bool = True  # Stealth mode enabled by default
 ):
     """
@@ -88,20 +89,107 @@ async def run_research(
             try:
                 subprocess.Popen(chrome_args)
                 print(f"Chrome started with remote debugging on port {debug_port}")
-                time.sleep(2)  # Give Chrome time to start
+                time.sleep(5)  # Give Chrome more time to start
                 
                 # Set the CDP URL to connect to this instance
                 # Use socket.gethostname() to get the current hostname
                 import socket
-                hostname = socket.gethostname()
+                import requests
+                import time
+                from urllib.parse import urlparse
+                
+                # Try to get the hostname, with fallback to localhost
+                try:
+                    hostname = socket.gethostname()
+                    print(f"Got system hostname: {hostname}")
+                    
+                    # Try to resolve the hostname to make sure it's valid
+                    try:
+                        socket.gethostbyname(hostname)
+                        print(f"Successfully resolved hostname {hostname} to an IP address")
+                    except socket.gaierror as e:
+                        print(f"Warning: Could not resolve hostname {hostname}: {e}")
+                        print("This might cause connection issues. Will try using it anyway.")
+                except Exception as e:
+                    print(f"Error getting hostname: {e}")
+                    hostname = "localhost"
+                    print(f"Falling back to default hostname: {hostname}")
                 
                 # We'll try to use the hostname, but if that fails, we'll fall back to localhost
                 # The server.js file has a similar fallback mechanism
                 print(f"Setting CDP URL to http://{hostname}:{debug_port}/json/version")
                 print(f"If connection fails, try manually setting --cdp-url=http://localhost:{debug_port}/json/version")
                 
-                cdp_url = f"http://{hostname}:{debug_port}/json/version"
-                chrome_path = None  # Don't use chrome_path anymore since we're using CDP
+                # Give Chrome more time to initialize
+                print("Waiting for Chrome to initialize...")
+                time.sleep(3)
+                
+                # Define the endpoints to try
+                endpoints = [
+                    {"url": f"http://{hostname}:{debug_port}/json/version", "name": "hostname version"},
+                    {"url": f"http://localhost:{debug_port}/json/version", "name": "localhost version"},
+                    {"url": f"http://{hostname}:{debug_port}/json/list", "name": "hostname list"},
+                    {"url": f"http://localhost:{debug_port}/json/list", "name": "localhost list"}
+                ]
+                
+                # Try each endpoint until one works
+                cdp_url = None
+                connection_timeout = 5  # seconds
+                
+                for endpoint in endpoints:
+                    try:
+                        url = endpoint["url"]
+                        name = endpoint["name"]
+                        print(f"Testing connection to CDP endpoint ({name}): {url}")
+                        
+                        response = requests.get(url, timeout=connection_timeout)
+                        if response.status_code == 200:
+                            print(f"✅ Successfully connected to CDP endpoint ({name}): {url}")
+                            
+                            # Validate the response content
+                            try:
+                                response_data = response.json()
+                                if isinstance(response_data, dict) or isinstance(response_data, list):
+                                    print(f"Response contains valid JSON data")
+                                    cdp_url = url
+                                    
+                                    # If this is a /json/list endpoint, use the first target's webSocketDebuggerUrl
+                                    if url.endswith('/json/list') and isinstance(response_data, list) and len(response_data) > 0:
+                                        if 'webSocketDebuggerUrl' in response_data[0]:
+                                            print(f"Found WebSocket debugger URL in response")
+                                        else:
+                                            print(f"No WebSocket debugger URL found in response")
+                                    
+                                    # If we found a working endpoint, break the loop
+                                    break
+                                else:
+                                    print(f"Response does not contain valid JSON data")
+                            except ValueError:
+                                print(f"Response is not valid JSON")
+                        else:
+                            print(f"❌ Failed to connect to CDP endpoint ({name}): {url}, status code: {response.status_code}")
+                    except requests.exceptions.Timeout:
+                        print(f"❌ Connection to CDP endpoint ({name}) timed out after {connection_timeout} seconds")
+                    except requests.exceptions.ConnectionError as e:
+                        print(f"❌ Connection error to CDP endpoint ({name}): {e}")
+                    except Exception as e:
+                        print(f"❌ Unexpected error connecting to CDP endpoint ({name}): {e}")
+                
+                if cdp_url:
+                    print(f"✅ Successfully found working CDP URL: {cdp_url}")
+                else:
+                    print(f"❌ Failed to connect to any CDP endpoint. Using default URL as fallback.")
+                    cdp_url = f"http://localhost:{debug_port}/json/version"
+                    print(f"Fallback CDP URL: {cdp_url}")
+                
+                # Parse the URL to extract hostname and port for logging
+                parsed_url = urlparse(cdp_url)
+                final_hostname = parsed_url.hostname or "localhost"
+                final_port = parsed_url.port or debug_port
+                
+                print(f"Final CDP connection will use hostname: {final_hostname}, port: {final_port}")
+                
+                chrome_path = ""  # Don't use chrome_path anymore since we're using CDP
             except Exception as e:
                 print(f"Error starting Chrome: {e}")
     
@@ -112,8 +200,9 @@ async def run_research(
         import os
         is_server = os.environ.get('SERVER_ENVIRONMENT') == 'true'
         
-        # Force headless to True when running on a server, otherwise False for embedded browser
-        headless = True if is_server else False
+        # Use headless mode for embedded browser
+        # This ensures the browser is hidden but can still capture screenshots
+        print(f"Embedded browser mode: Using headless={headless}")
         
         # Make sure we have the remote debugging port set
         if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
@@ -123,8 +212,8 @@ async def run_research(
         if not any([arg == '--no-sandbox' for arg in chromium_args]):
             chromium_args.append('--no-sandbox')
             
-        # If running in headless mode on a server, add the necessary flags for headless mode
-        if is_server:
+        # Add headless flag if headless is True
+        if headless:
             # Use the new headless flag if not already specified
             if not any([arg.startswith('--headless=') for arg in chromium_args]):
                 chromium_args.append('--headless=new')
@@ -140,17 +229,45 @@ async def run_research(
                 chromium_args.append('--window-size=1280,720')
             
         print("Running in embedded browser mode with args:", chromium_args)
+    # For local browser, force headless mode to hide the window
+    elif use_local_browser:
+        # Force headless to True for local browser to hide the window
+        headless = True
+        print("Local browser mode: Setting headless=True to hide the browser window")
+        
+        # Make sure we have the remote debugging port set for screenshots
+        if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
+            chromium_args.append('--remote-debugging-port=9222')
+            
+        # Add other necessary flags for headless mode
+        if not any([arg.startswith('--headless=') for arg in chromium_args]):
+            chromium_args.append('--headless=new')
+            
+        if not any([arg == '--disable-gpu' for arg in chromium_args]):
+            chromium_args.append('--disable-gpu')
+            
+        if not any([arg == '--window-size=1280,720' for arg in chromium_args]):
+            chromium_args.append('--window-size=1280,720')
+            
+        print("Running in local browser mode with args:", chromium_args)
     
     # Initialize browser with configurable options
-    config = BrowserConfig(
-        headless=headless,
-        disable_security=disable_security,
-        extra_chromium_args=chromium_args,
-        chrome_instance_path=chrome_path,
-        wss_url=wss_url,
-        cdp_url=cdp_url,
-        proxy={"server": proxy} if proxy else None
-    )
+    # Create a dictionary of kwargs to pass to BrowserConfig
+    browser_config_kwargs = {
+        "headless": headless,
+        "disable_security": disable_security,
+        "extra_chromium_args": chromium_args,
+        "chrome_instance_path": chrome_path,
+        "wss_url": wss_url,
+        "cdp_url": cdp_url,
+        "proxy": {"server": proxy} if proxy else None
+    }
+    
+    # Remove any None values to avoid passing unnecessary kwargs
+    browser_config_kwargs = {k: v for k, v in browser_config_kwargs.items() if v is not None}
+    
+    # Create the config object
+    config = BrowserConfig(**browser_config_kwargs)
     
     # Use StealthBrowser by default (stealth_mode is True by default)
     if stealth_mode:
@@ -204,6 +321,8 @@ def main():
                       help='Run with browser visible (default: headless/invisible)')
     visibility_group.add_argument('--embedded-browser', action='store_true',
                       help='Run browser in embedded mode (for iframe integration)')
+    visibility_group.add_argument('--use-local-browser', action='store_true',
+                      help='Use local browser (hidden) with screenshots in embedded view')
     
     # Add options for connecting to existing browser
     browser_group = parser.add_argument_group('Existing Browser Connection')
@@ -246,6 +365,7 @@ def main():
             proxy=args.proxy,
             connect_existing=args.connect_existing,
             embedded_browser=args.embedded_browser,
+            use_local_browser=args.use_local_browser,
             stealth_mode=not args.no_stealth_mode
         ))
     except KeyboardInterrupt:

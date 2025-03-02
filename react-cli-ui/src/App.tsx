@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent, ReactElement } from 'react';
 import axios from 'axios';
 import Iframe from 'react-iframe';
 import './App.css';
@@ -14,6 +14,22 @@ interface FormData {
   cdpUrl: string;
   extraChromiumArgs: string;
   proxy: string;
+  useRemoteBackend: boolean;
+  remoteBackendUrl: string;
+}
+
+// Define Electron API interface
+interface ElectronAPI {
+  getAppPath: () => Promise<string>;
+  setBackendConfig: (config: any) => Promise<boolean>;
+  selectChromePath: () => Promise<string | null>;
+}
+
+// Add Electron API to window
+declare global {
+  interface Window {
+    electron?: ElectronAPI;
+  }
 }
 
 interface CliOutput {
@@ -21,7 +37,20 @@ interface CliOutput {
   timestamp: number;
 }
 
-function App() {
+// Function to determine if a prompt is asking for information or task completion
+const isInformationQuery = (prompt: string): boolean => {
+  const informationKeywords = ['what', 'who', 'when', 'where', 'why', 'how', 'explain', 'describe', 'tell me about', 'information about'];
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Check if the prompt starts with an information keyword
+  return informationKeywords.some(keyword => 
+    lowerPrompt.startsWith(keyword) || 
+    lowerPrompt.includes(`${keyword}?`) || 
+    lowerPrompt.includes(` ${keyword} `)
+  );
+};
+
+export default function App() {
   const [formData, setFormData] = useState<FormData>({
     prompt: '',
     noHeadless: false,
@@ -33,7 +62,15 @@ function App() {
     cdpUrl: '',
     extraChromiumArgs: '',
     proxy: '',
+    useRemoteBackend: false,
+    remoteBackendUrl: '',
   });
+  
+  // State to track if running in Electron
+  const [isElectron, setIsElectron] = useState(false);
+  
+  // State to track if the current query is an information query
+  const [isInfoQuery, setIsInfoQuery] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -59,12 +96,7 @@ function App() {
       // Check if the message is from our iframe
       if (event.data && event.data.type === 'cli-output') {
         addCliOutput(event.data.data);
-        
-        // Check if the task is completed
-        if (event.data.data.includes("Task completed successfully") || 
-            event.data.data.includes("Research task completed.")) {
-          setTaskCompleted(true);
-        }
+        // Note: Task completion is now handled in the addCliOutput function
       }
     };
     
@@ -74,6 +106,16 @@ function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
+  }, []);
+  
+  // Detect if running in Electron
+  useEffect(() => {
+    setIsElectron(!!window.electron);
+    
+    // If running in Electron, set up Chrome path selection
+    if (window.electron) {
+      console.log('Running in Electron environment');
+    }
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -114,9 +156,20 @@ function App() {
   // Function to add CLI output
   const addCliOutput = (text: string) => {
     setCliOutput(prev => [...prev, { text, timestamp: Date.now() }]);
+    
+    // Check if the task is completed
+    if (text.includes("Task completed successfully") || 
+        text.includes("Research task completed.") ||
+        text.includes("Process completed with exit code:")) {
+      setTaskCompleted(true);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // Determine if this is an information query
+    const isInfo = isInformationQuery(formData.prompt);
+    setIsInfoQuery(isInfo);
+    
     setTaskCompleted(false);
     e.preventDefault();
     setIsLoading(true);
@@ -128,11 +181,11 @@ function App() {
     const apiHost = window.location.hostname;
     const apiPort = '3002'; // API server always runs on port 3002
     
-    // Always set noHeadless to true when using embedded browser
-    // unless using local browser
+    // Always set noHeadless to false to ensure headless mode
+    // unless user explicitly wants to see the browser when using local browser
     const updatedFormData = {
       ...formData,
-      noHeadless: formData.useLocalBrowser ? formData.noHeadless : true
+      noHeadless: formData.useLocalBrowser ? formData.noHeadless : false
     };
 
     try {
@@ -199,6 +252,338 @@ function App() {
       prompt: ''
     });
     setTaskCompleted(false);
+    
+    // Focus on the prompt textarea after a short delay to ensure it's rendered
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 100);
+  };
+  
+  // Function to refine the current task
+  const refineTask = () => {
+    setBrowserVisible(false);
+    setResult(null);
+    setError(null);
+    setCliOutput([]);
+    setTaskCompleted(false);
+    
+    // Keep the current prompt
+    // Focus on the prompt textarea after a short delay to ensure it's rendered
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 100);
+  };
+  
+  // Function to format information results for better readability
+  const formatInformationResults = (result: string): ReactElement => {
+    // Handle empty or error results
+    if (!result || result.trim() === '' || result.includes("Unexpected error")) {
+      return (
+        <div className="formatted-information">
+          <p>No information available. There may have been an error with the research task.</p>
+        </div>
+      );
+    }
+    
+    // Split the result into paragraphs
+    const paragraphs = result.split('\n\n').filter(p => p.trim());
+    
+    // If no paragraphs after filtering, show a fallback message
+    if (paragraphs.length === 0) {
+      return (
+        <div className="formatted-information">
+          <p>Information was requested but no detailed results were found.</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="formatted-information">
+        {paragraphs.map((paragraph: string, index: number) => {
+          // Check if this paragraph looks like a heading (shorter and ends with a colon)
+          const isHeading = paragraph.length < 100 && paragraph.trim().endsWith(':');
+          
+          return isHeading ? (
+            <h3 key={index}>{paragraph}</h3>
+          ) : (
+            <p key={index}>{paragraph}</p>
+          );
+        })}
+      </div>
+    );
+  };
+  
+  // Function to create a summary for task completion results
+  const formatTaskSummary = (result: string): ReactElement => {
+    // Handle empty or error results
+    if (!result || result.trim() === '' || result.includes("Unexpected error")) {
+      return (
+        <div className="task-summary">
+          <h3>Task summary</h3>
+          <div className="formatted-content">
+            <p>The task was attempted but encountered an error. Please check the CLI output for details.</p>
+          </div>
+        </div>
+      );
+    }
+    
+    // Try to extract the extracted_content from ActionResult
+    try {
+      console.log('Raw result received in formatTaskSummary:', result);
+      
+      // Check for the [1] prefix that appears in the console output
+      let processedResult = result;
+      if (result.startsWith('[1]')) {
+        processedResult = result.substring(3).trim();
+        console.log('Removed [1] prefix, now processing:', processedResult);
+      }
+      
+      // Extract all ActionResult objects and find the one with is_done=True
+      const actionResultRegex = /ActionResult\([^)]+\)/g;
+      const actionResults = processedResult.match(actionResultRegex);
+      
+      if (actionResults) {
+        console.log('Found ActionResult objects:', actionResults.length);
+        
+        // Find the one with is_done=True
+        const isDoneTrue = actionResults.find(ar => ar.includes('is_done=True') || ar.includes('is_done=true'));
+        console.log('ActionResult with is_done=True:', isDoneTrue || 'Not found');
+        
+        // Extract the extracted_content from the is_done=True ActionResult
+        if (isDoneTrue) {
+          const extractedContent = isDoneTrue.match(/extracted_content='([^']+)'/);
+          if (extractedContent && extractedContent[1]) {
+            console.log('Extracted content from is_done=True ActionResult:', extractedContent[1]);
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {extractedContent[1].split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          
+          // Try with double quotes if single quotes didn't work
+          const extractedContentDoubleQuotes = isDoneTrue.match(/extracted_content="([^"]+)"/);
+          if (extractedContentDoubleQuotes && extractedContentDoubleQuotes[1]) {
+            console.log('Extracted content from is_done=True ActionResult (double quotes):', extractedContentDoubleQuotes[1]);
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {extractedContentDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+        }
+      }
+      
+      // If the above approach didn't work, try the original regex patterns
+      // Check for the user's example format directly (with single quotes)
+      const userExampleMatch = processedResult.match(/ActionResult\(is_done=True,\s*extracted_content='([^']+)'/);
+      if (userExampleMatch && userExampleMatch[1]) {
+        console.log('Matched user example format (single quotes):', userExampleMatch[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {userExampleMatch[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the user's example format with double quotes
+      const userExampleMatchDoubleQuotes = processedResult.match(/ActionResult\(is_done=True,\s*extracted_content="([^"]+)"/);
+      if (userExampleMatchDoubleQuotes && userExampleMatchDoubleQuotes[1]) {
+        console.log('Matched user example format (double quotes):', userExampleMatchDoubleQuotes[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {userExampleMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the 'done' field in all_model_outputs (with single quotes)
+      const doneTextMatch = processedResult.match(/{'done':\s*{'text':\s*'([^']+)'}/);
+      if (doneTextMatch && doneTextMatch[1]) {
+        console.log('Matched done text format (single quotes):', doneTextMatch[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {doneTextMatch[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the 'done' field in all_model_outputs (with double quotes)
+      const doneTextMatchDoubleQuotes = processedResult.match(/\{"done":\s*\{"text":\s*"([^"]+)"\}/);
+      if (doneTextMatchDoubleQuotes && doneTextMatchDoubleQuotes[1]) {
+        console.log('Matched done text format (double quotes):', doneTextMatchDoubleQuotes[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {doneTextMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // First, try to parse the result as JSON directly
+      try {
+        // Check if the result looks like a JSON string
+        if (processedResult.trim().startsWith('{') && processedResult.trim().endsWith('}')) {
+          const jsonResult = JSON.parse(processedResult);
+          
+          // Check for all_results format in AgentHistoryList
+          if (jsonResult.all_results && Array.isArray(jsonResult.all_results)) {
+            // Find only completed results (is_done=True) with extracted_content
+            const formattedResults = jsonResult.all_results
+              .filter((res: any) => res.is_done === true && res.extracted_content)
+              .map((res: any) => res.extracted_content)
+              .join('\n\n'); // Use double newlines for better readability
+            
+            console.log('Extracted content from completed tasks:', formattedResults);
+            
+            if (formattedResults) {
+              return (
+                <div className="task-summary">
+                  <h3>Task summary</h3>
+                  <div className="formatted-content">
+                    {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
+                      <p key={index}>{paragraph}</p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+          }
+        }
+      } catch (jsonError) {
+        console.log('Error parsing JSON directly:', jsonError);
+      }
+      
+      // If direct JSON parsing fails, try to extract JSON from the string
+      const jsonMatch = processedResult.match(/AgentHistoryList\(([^)]+)\)/);
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          // Convert the Python-like syntax to JSON-like string for parsing
+          let jsonStr = jsonMatch[1]
+            .replace(/'/g, '"')
+            .replace(/True/g, 'true')
+            .replace(/False/g, 'false')
+            .replace(/None/g, 'null');
+          
+          console.log('Attempting to extract content from:', jsonStr);
+          
+          // First try to extract using a more robust regex that can handle nested quotes
+          const extractedContentRegex = /is_done=(true|True),\s*extracted_content=(['"])((?:(?!\2).|\\.)*)\2/g;
+          let match;
+          const extractedContents = [];
+          
+          while ((match = extractedContentRegex.exec(jsonStr)) !== null) {
+            if (match[3]) {
+              extractedContents.push(match[3]);
+            }
+          }
+          
+          // If the robust regex didn't work, fall back to the simpler regex
+          if (extractedContents.length === 0) {
+            // Look for patterns like is_done=True, extracted_content="..."
+            const isDoneRegex = /is_done=(true|True)[^{]*?extracted_content=(['"])(.*?)\2/g;
+            let isDoneMatch;
+            
+            while ((isDoneMatch = isDoneRegex.exec(jsonStr)) !== null) {
+              if (isDoneMatch[3]) {
+                extractedContents.push(isDoneMatch[3]);
+              }
+            }
+            
+            // If still no matches, try the original approach but filter for is_done=True
+            if (extractedContents.length === 0) {
+              // Find all is_done=True sections
+              const isDoneSections = jsonStr.match(/is_done=(true|True)[^{]*?extracted_content=(['"])(.*?)\2/g);
+              
+              if (isDoneSections && isDoneSections.length > 0) {
+                isDoneSections.forEach((section: string) => {
+                  const content = section.match(/extracted_content=(['"])(.*?)\1/);
+                  if (content && content[2]) {
+                    extractedContents.push(content[2]);
+                  }
+                });
+              }
+            }
+          }
+          
+          console.log('Extracted contents:', extractedContents);
+          
+          if (extractedContents.length > 0) {
+            const formattedResults = extractedContents.join('\n\n'); // Use double newlines for better readability
+            
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+        } catch (e) {
+          console.log('Error parsing AgentHistoryList:', e);
+        }
+      }
+    } catch (e) {
+      // If all parsing fails, fall back to the marker-based extraction
+      console.log('Error parsing ActionResult:', e);
+    }
+    
+    // Fall back to extracting text after the "=== Research Results ===" marker
+    const researchResultsMarker = "=== Research Results ===";
+    const markerIndex = result.indexOf(researchResultsMarker);
+    
+    let extractedText = result;
+    if (markerIndex !== -1) {
+      // Get the text after the marker and the following newline
+      extractedText = result.substring(markerIndex + researchResultsMarker.length).trim();
+    }
+    
+    return (
+      <div className="task-summary">
+        <h3>Task summary</h3>
+        <div className="formatted-content">
+          {extractedText.split('\n\n').map((paragraph: string, index: number) => (
+            <p key={index}>{paragraph}</p>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -266,6 +651,27 @@ function App() {
               </div>
             )}
           </div>
+          
+          {/* Top Task Buttons - only shown when task is completed */}
+          {taskCompleted && (
+            <div className="top-new-task-button">
+              <span className="completion-message">Task completed!</span>
+              <button className="refine-task" onClick={refineTask}>Refine task</button>
+              <button className="new-task" onClick={startNewTask}>Start new task</button>
+            </div>
+          )}
+          
+          {/* Results Display - Moved above browser container */}
+          {result && browserVisible && taskCompleted && (
+            <div className="result-container">
+              <h2>Research results</h2>
+              {isInfoQuery ? (
+                formatInformationResults(result)
+              ) : (
+                formatTaskSummary(result)
+              )}
+            </div>
+          )}
           
           {/* Browser Container - Always shown when research is in progress */}
           {browserVisible && (
@@ -360,15 +766,33 @@ function App() {
 
                   <div className="form-group">
                     <label htmlFor="chromePath">Chrome Path:</label>
-                    <input
-                      type="text"
-                      id="chromePath"
-                      name="chromePath"
-                      value={formData.chromePath}
-                      onChange={handleInputChange}
-                      placeholder="e.g., /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-                      disabled={!formData.connectExisting}
-                    />
+                    <div className="chrome-path-container">
+                      <input
+                        type="text"
+                        id="chromePath"
+                        name="chromePath"
+                        value={formData.chromePath}
+                        onChange={handleInputChange}
+                        placeholder="e.g., /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+                        disabled={!formData.connectExisting}
+                      />
+                      {isElectron && (
+                        <button 
+                          type="button" 
+                          onClick={async () => {
+                            if (window.electron) {
+                              const path = await window.electron.selectChromePath();
+                              if (path) {
+                                setFormData({...formData, chromePath: path});
+                              }
+                            }
+                          }}
+                          disabled={!formData.connectExisting}
+                        >
+                          Browse...
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-group">
@@ -399,6 +823,33 @@ function App() {
                 </div>
 
                 {/* Additional Options */}
+                <div className="form-section">
+                  <h3>Backend Configuration</h3>
+                  <div className="form-group checkbox">
+                    <input
+                      type="checkbox"
+                      id="useRemoteBackend"
+                      name="useRemoteBackend"
+                      checked={formData.useRemoteBackend}
+                      onChange={handleInputChange}
+                    />
+                    <label htmlFor="useRemoteBackend">Use Remote Backend</label>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="remoteBackendUrl">Remote Backend URL:</label>
+                    <input
+                      type="text"
+                      id="remoteBackendUrl"
+                      name="remoteBackendUrl"
+                      value={formData.remoteBackendUrl}
+                      onChange={handleInputChange}
+                      placeholder="e.g., http://example.com:3002"
+                      disabled={!formData.useRemoteBackend}
+                    />
+                  </div>
+                </div>
+                
                 <div className="form-section">
                   <h3>Additional Options</h3>
                   <div className="form-group">
@@ -438,23 +889,21 @@ function App() {
             </div>
           )}
           
-          {/* Results Display */}
+          {/* Results Display for non-browser view */}
           {result && !browserVisible && (
             <div className="result-container">
-              <h2>Research Results</h2>
-              <pre>{result}</pre>
+              <h2>Research results</h2>
+              {isInfoQuery ? (
+                formatInformationResults(result)
+              ) : (
+                formatTaskSummary(result)
+              )}
               {taskCompleted && (
                 <div className="new-task-button">
-                  <button onClick={startNewTask}>Start New Task</button>
+                  <button className="refine-task" onClick={refineTask}>Refine task</button>
+                  <button className="new-task" onClick={startNewTask}>Start new task</button>
                 </div>
               )}
-            </div>
-          )}
-          
-          {/* New Task Button when browser is visible but task is completed */}
-          {browserVisible && taskCompleted && (
-            <div className="new-task-button-container">
-              <button className="new-task-button" onClick={startNewTask}>Start New Task</button>
             </div>
           )}
         </div>
@@ -462,5 +911,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
