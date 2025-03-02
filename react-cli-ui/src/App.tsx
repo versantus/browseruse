@@ -312,7 +312,81 @@ export default function App() {
       );
     }
     
-    // Extract only the text that appears after the "=== Research Results ===" marker
+    // Try to extract the 'done.text' value from the ActionResult
+    try {
+      // First, try to parse the result as JSON directly
+      try {
+        // Check if the result looks like a JSON string
+        if (result.trim().startsWith('{') && result.trim().endsWith('}')) {
+          const jsonResult = JSON.parse(result);
+          
+          // Check for AgentHistoryList format as shown in Nik's example
+          if (jsonResult.all_model_outputs && Array.isArray(jsonResult.all_model_outputs)) {
+            // Find the last output with 'done'
+            for (let i = jsonResult.all_model_outputs.length - 1; i >= 0; i--) {
+              const output = jsonResult.all_model_outputs[i];
+              if (output.done && output.done.text) {
+                return (
+                  <div className="task-summary">
+                    <h3>Task completion summary</h3>
+                    <p>{output.done.text}</p>
+                  </div>
+                );
+              }
+            }
+          }
+          
+          // Check for all_results format
+          if (jsonResult.all_results && Array.isArray(jsonResult.all_results)) {
+            // Find the last result with is_done=true
+            for (let i = jsonResult.all_results.length - 1; i >= 0; i--) {
+              const res = jsonResult.all_results[i];
+              if (res.is_done === true && res.extracted_content) {
+                return (
+                  <div className="task-summary">
+                    <h3>Task completion summary</h3>
+                    <p>{res.extracted_content}</p>
+                  </div>
+                );
+              }
+            }
+          }
+        }
+      } catch (jsonError) {
+        console.log('Error parsing JSON directly:', jsonError);
+      }
+      
+      // If direct JSON parsing fails, try to extract JSON from the string
+      const jsonMatch = result.match(/AgentHistoryList\(([^)]+)\)/);
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          // Convert the Python-like syntax to JSON
+          let jsonStr = jsonMatch[1]
+            .replace(/'/g, '"')
+            .replace(/True/g, 'true')
+            .replace(/False/g, 'false')
+            .replace(/None/g, 'null');
+          
+          // Try to extract the done.text value using regex
+          const doneTextMatch = jsonStr.match(/"done":\s*{\s*"text":\s*"([^"]+)"/);
+          if (doneTextMatch && doneTextMatch[1]) {
+            return (
+              <div className="task-summary">
+                <h3>Task completion summary</h3>
+                <p>{doneTextMatch[1]}</p>
+              </div>
+            );
+          }
+        } catch (e) {
+          console.log('Error parsing AgentHistoryList:', e);
+        }
+      }
+    } catch (e) {
+      // If all parsing fails, fall back to the marker-based extraction
+      console.log('Error parsing ActionResult:', e);
+    }
+    
+    // Fall back to extracting text after the "=== Research Results ===" marker
     const researchResultsMarker = "=== Research Results ===";
     const markerIndex = result.indexOf(researchResultsMarker);
     
@@ -395,6 +469,26 @@ export default function App() {
               </div>
             )}
           </div>
+          
+          {/* Top New Task Button - only shown when task is completed */}
+          {taskCompleted && (
+            <div className="top-new-task-button">
+              <span className="completion-message">Task completed!</span>
+              <button onClick={startNewTask}>Start new task</button>
+            </div>
+          )}
+          
+          {/* Results Display - Moved above browser container */}
+          {result && browserVisible && taskCompleted && (
+            <div className="result-container">
+              <h2>Research results</h2>
+              {isInfoQuery ? (
+                formatInformationResults(result)
+              ) : (
+                formatTaskSummary(result)
+              )}
+            </div>
+          )}
           
           {/* Browser Container - Always shown when research is in progress */}
           {browserVisible && (
@@ -612,15 +706,7 @@ export default function App() {
             </div>
           )}
           
-          {/* Top New Task Button - only shown when task is completed */}
-          {taskCompleted && (
-            <div className="top-new-task-button">
-              <span className="completion-message">Task completed!</span>
-              <button onClick={startNewTask}>Start new task</button>
-            </div>
-          )}
-          
-          {/* Results Display */}
+          {/* Results Display for non-browser view */}
           {result && !browserVisible && (
             <div className="result-container">
               <h2>Research results</h2>
@@ -634,20 +720,6 @@ export default function App() {
                   <button onClick={startNewTask}>Start new task</button>
                 </div>
               )}
-            </div>
-          )}
-          
-          {/* Task Summary and New Task Button when browser is visible but task is completed */}
-          {browserVisible && taskCompleted && (
-            <div className="new-task-button-container">
-              <h3>Task completed!</h3>
-              {isInfoQuery ? (
-                <p>Your research has been completed successfully. The information you requested is displayed above.</p>
-              ) : (
-                <p>Your task has been completed successfully. Here's a summary of what was done:</p>
-              )}
-              {isInfoQuery ? formatInformationResults(result || '') : formatTaskSummary(result || '')}
-              <button className="new-task-button" onClick={startNewTask}>Start new task</button>
             </div>
           )}
         </div>
