@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, KeyboardEvent, ReactElement } from 'react';
 import axios from 'axios';
 import Iframe from 'react-iframe';
+import ReactMarkdown from 'react-markdown';
 import './App.css';
 
 interface FormData {
@@ -362,9 +363,7 @@ export default function App() {
               <div className="task-summary">
                 <h3>Task summary</h3>
                 <div className="formatted-content">
-                  {extractedContent[1].split('\n\n').map((paragraph: string, index: number) => (
-                    <p key={index}>{paragraph}</p>
-                  ))}
+                  <ReactMarkdown>{extractedContent[1]}</ReactMarkdown>
                 </div>
               </div>
             );
@@ -378,9 +377,7 @@ export default function App() {
               <div className="task-summary">
                 <h3>Task summary</h3>
                 <div className="formatted-content">
-                  {extractedContentDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
-                    <p key={index}>{paragraph}</p>
-                  ))}
+                  <ReactMarkdown>{extractedContentDoubleQuotes[1]}</ReactMarkdown>
                 </div>
               </div>
             );
@@ -397,9 +394,7 @@ export default function App() {
           <div className="task-summary">
             <h3>Task summary</h3>
             <div className="formatted-content">
-              {userExampleMatch[1].split('\n\n').map((paragraph: string, index: number) => (
-                <p key={index}>{paragraph}</p>
-              ))}
+              <ReactMarkdown>{userExampleMatch[1]}</ReactMarkdown>
             </div>
           </div>
         );
@@ -413,9 +408,7 @@ export default function App() {
           <div className="task-summary">
             <h3>Task summary</h3>
             <div className="formatted-content">
-              {userExampleMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
-                <p key={index}>{paragraph}</p>
-              ))}
+              <ReactMarkdown>{userExampleMatchDoubleQuotes[1]}</ReactMarkdown>
             </div>
           </div>
         );
@@ -429,9 +422,7 @@ export default function App() {
           <div className="task-summary">
             <h3>Task summary</h3>
             <div className="formatted-content">
-              {doneTextMatch[1].split('\n\n').map((paragraph: string, index: number) => (
-                <p key={index}>{paragraph}</p>
-              ))}
+              <ReactMarkdown>{doneTextMatch[1]}</ReactMarkdown>
             </div>
           </div>
         );
@@ -445,9 +436,7 @@ export default function App() {
           <div className="task-summary">
             <h3>Task summary</h3>
             <div className="formatted-content">
-              {doneTextMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
-                <p key={index}>{paragraph}</p>
-              ))}
+              <ReactMarkdown>{doneTextMatchDoubleQuotes[1]}</ReactMarkdown>
             </div>
           </div>
         );
@@ -474,9 +463,7 @@ export default function App() {
                 <div className="task-summary">
                   <h3>Task summary</h3>
                   <div className="formatted-content">
-                    {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
-                      <p key={index}>{paragraph}</p>
-                    ))}
+                    <ReactMarkdown>{formattedResults}</ReactMarkdown>
                   </div>
                 </div>
               );
@@ -548,9 +535,7 @@ export default function App() {
               <div className="task-summary">
                 <h3>Task summary</h3>
                 <div className="formatted-content">
-                  {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
-                    <p key={index}>{paragraph}</p>
-                  ))}
+                  <ReactMarkdown>{formattedResults}</ReactMarkdown>
                 </div>
               </div>
             );
@@ -578,9 +563,7 @@ export default function App() {
       <div className="task-summary">
         <h3>Task summary</h3>
         <div className="formatted-content">
-          {extractedText.split('\n\n').map((paragraph: string, index: number) => (
-            <p key={index}>{paragraph}</p>
-          ))}
+          <ReactMarkdown>{extractedText}</ReactMarkdown>
         </div>
       </div>
     );
