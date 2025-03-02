@@ -54,77 +54,101 @@ async function connectToCDP(port = 9222) {
     
     let response;
     let targets;
+    let connected = false;
     
-    try {
-      // Try connecting using the hostname
-      response = await axios.get(`http://${hostname}:${port}/json/list`);
-      targets = response.data;
-      console.log(`Successfully connected to CDP using hostname: ${hostname}`);
-    } catch (error) {
-      console.log(`Failed to connect using hostname: ${hostname}. Error: ${error.message}`);
-      console.log(`Trying fallback to localhost...`);
+    // Try multiple connection methods in sequence
+    const connectionMethods = [
+      { name: 'hostname', url: `http://${hostname}:${port}/json/list` },
+      { name: 'localhost', url: `http://localhost:${port}/json/list` },
+      { name: '127.0.0.1', url: `http://127.0.0.1:${port}/json/list` }
+    ];
+    
+    for (const method of connectionMethods) {
+      if (connected) break;
       
-      // If that fails, try connecting to localhost
-      response = await axios.get(`http://localhost:${port}/json/list`);
-      targets = response.data;
-      console.log(`Successfully connected to CDP using localhost fallback`);
+      try {
+        console.log(`Trying to connect using ${method.name}: ${method.url}`);
+        response = await axios.get(method.url, { timeout: 5000 });
+        targets = response.data;
+        console.log(`Successfully connected to CDP using ${method.name}`);
+        connected = true;
+      } catch (error) {
+        console.log(`Failed to connect using ${method.name}. Error: ${error.message}`);
+      }
+    }
+    
+    if (!connected || !targets || targets.length === 0) {
+      throw new Error('Could not connect to CDP using any method');
     }
     
     console.log(`Found ${targets.length} browser targets`);
     
-    if (targets && targets.length > 0) {
-      // Find the first page target
-      const target = targets.find(t => t.type === 'page');
-      if (target) {
-        console.log('Found browser target:', target.title);
-        
-        // Create a WebSocket connection to the target
-        const ws = new WebSocket(target.webSocketDebuggerUrl);
-        
-        // Set up message handler
-        ws.on('message', (message) => {
-          try {
-            const data = JSON.parse(message.toString());
-            
-            // If this is a screenshot response
-            if (data.id === 1 && data.result && data.result.data) {
-              // Broadcast the screenshot to all connected clients
-              clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({
-                    type: 'screenshot',
-                    data: data.result.data
-                  }));
-                }
-              });
-            }
-          } catch (error) {
-            console.error('Error processing CDP message:', error);
-          }
-        });
-        
-        // When the connection is established
-        ws.on('open', () => {
-          console.log('Connected to Chrome target');
-          
-          // Start capturing screenshots periodically
-          const captureInterval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                id: 1,
-                method: 'Page.captureScreenshot',
-                params: { format: 'jpeg', quality: 80 }
-              }));
-            } else {
-              clearInterval(captureInterval);
-            }
-          }, 500); // Capture every 500ms
-        });
-        
-        return target.webSocketDebuggerUrl;
-      }
+    // First try to find a non-chrome URL target (actual page)
+    let target = targets.find(t => t.type === 'page' && !t.url.startsWith('chrome:'));
+    
+    // If no non-chrome URL target found, fall back to any page target
+    if (!target) {
+      console.log('No non-chrome URL target found, falling back to any page target');
+      target = targets.find(t => t.type === 'page');
     }
-    throw new Error('No browser targets found');
+    
+    if (target) {
+      console.log('Found browser target:', target.title);
+      console.log('Connecting to WebSocket URL:', target.webSocketDebuggerUrl);
+      
+      // Create a WebSocket connection to the target
+      const ws = new WebSocket(target.webSocketDebuggerUrl);
+      
+      // Set up message handler
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          
+          // If this is a screenshot response
+          if (data.id === 1 && data.result && data.result.data) {
+            console.log('Successfully captured screenshot');
+            // Broadcast the screenshot to all connected clients
+            clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'screenshot',
+                  data: data.result.data
+                }));
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error processing CDP message:', error);
+        }
+      });
+      
+      // Handle WebSocket errors
+      ws.on('error', (error) => {
+        console.error('WebSocket error:', error.message);
+      });
+      
+      // When the connection is established
+      ws.on('open', () => {
+        console.log('Successfully connected to Chrome target');
+        
+        // Start capturing screenshots periodically
+        const captureInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              id: 1,
+              method: 'Page.captureScreenshot',
+              params: { format: 'jpeg', quality: 80 }
+            }));
+          } else {
+            clearInterval(captureInterval);
+          }
+        }, 500); // Capture every 500ms
+      });
+      
+      return target.webSocketDebuggerUrl;
+    }
+    
+    throw new Error('No suitable browser targets found');
   } catch (error) {
     console.error('Error connecting to CDP:', error.message);
     return null;
