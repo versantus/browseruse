@@ -333,6 +333,70 @@ export default function App() {
     
     // Try to extract the extracted_content from ActionResult
     try {
+      // Check for the user's example format directly (with single quotes)
+      const userExampleMatch = result.match(/ActionResult\(is_done=True,\s*extracted_content='([^']+)'/);
+      if (userExampleMatch && userExampleMatch[1]) {
+        console.log('Matched user example format (single quotes):', userExampleMatch[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {userExampleMatch[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the user's example format with double quotes
+      const userExampleMatchDoubleQuotes = result.match(/ActionResult\(is_done=True,\s*extracted_content="([^"]+)"/);
+      if (userExampleMatchDoubleQuotes && userExampleMatchDoubleQuotes[1]) {
+        console.log('Matched user example format (double quotes):', userExampleMatchDoubleQuotes[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {userExampleMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the 'done' field in all_model_outputs (with single quotes)
+      const doneTextMatch = result.match(/{'done':\s*{'text':\s*'([^']+)'}/);
+      if (doneTextMatch && doneTextMatch[1]) {
+        console.log('Matched done text format (single quotes):', doneTextMatch[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {doneTextMatch[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
+      // Check for the 'done' field in all_model_outputs (with double quotes)
+      const doneTextMatchDoubleQuotes = result.match(/\{"done":\s*\{"text":\s*"([^"]+)"\}/);
+      if (doneTextMatchDoubleQuotes && doneTextMatchDoubleQuotes[1]) {
+        console.log('Matched done text format (double quotes):', doneTextMatchDoubleQuotes[1]);
+        return (
+          <div className="task-summary">
+            <h3>Task summary</h3>
+            <div className="formatted-content">
+              {doneTextMatchDoubleQuotes[1].split('\n\n').map((paragraph: string, index: number) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      
       // First, try to parse the result as JSON directly
       try {
         // Check if the result looks like a JSON string
@@ -341,13 +405,13 @@ export default function App() {
           
           // Check for all_results format in AgentHistoryList
           if (jsonResult.all_results && Array.isArray(jsonResult.all_results)) {
-            // Find all results with extracted_content and format them nicely
+            // Find only completed results (is_done=True) with extracted_content
             const formattedResults = jsonResult.all_results
-              .filter((res: any) => res.extracted_content)
+              .filter((res: any) => res.is_done === true && res.extracted_content)
               .map((res: any) => res.extracted_content)
               .join('\n\n'); // Use double newlines for better readability
             
-            console.log('Extracted content from JSON:', formattedResults);
+            console.log('Extracted content from completed tasks:', formattedResults);
             
             if (formattedResults) {
               return (
@@ -381,29 +445,41 @@ export default function App() {
           console.log('Attempting to extract content from:', jsonStr);
           
           // First try to extract using a more robust regex that can handle nested quotes
-          const extractedContentRegex = /extracted_content=(['"])((?:(?!\1).|\\.)*)\1/g;
+          const extractedContentRegex = /is_done=(true|True),\s*extracted_content=(['"])((?:(?!\2).|\\.)*)\2/g;
           let match;
           const extractedContents = [];
           
           while ((match = extractedContentRegex.exec(jsonStr)) !== null) {
-            if (match[2]) {
-              extractedContents.push(match[2]);
+            if (match[3]) {
+              extractedContents.push(match[3]);
             }
           }
           
           // If the robust regex didn't work, fall back to the simpler regex
           if (extractedContents.length === 0) {
-            const extractedContentMatches = jsonStr.match(/extracted_content="(.*?)"/g) || 
-                                           jsonStr.match(/extracted_content='(.*?)'/g);
-            if (extractedContentMatches && extractedContentMatches.length > 0) {
-              // Extract the actual content from each match
-              extractedContentMatches.forEach((match: string) => {
-                const content = match.match(/extracted_content="(.*?)"/) || 
-                               match.match(/extracted_content='(.*?)'/);
-                if (content && content[1]) {
-                  extractedContents.push(content[1]);
-                }
-              });
+            // Look for patterns like is_done=True, extracted_content="..."
+            const isDoneRegex = /is_done=(true|True)[^{]*?extracted_content=(['"])(.*?)\2/g;
+            let isDoneMatch;
+            
+            while ((isDoneMatch = isDoneRegex.exec(jsonStr)) !== null) {
+              if (isDoneMatch[3]) {
+                extractedContents.push(isDoneMatch[3]);
+              }
+            }
+            
+            // If still no matches, try the original approach but filter for is_done=True
+            if (extractedContents.length === 0) {
+              // Find all is_done=True sections
+              const isDoneSections = jsonStr.match(/is_done=(true|True)[^{]*?extracted_content=(['"])(.*?)\2/g);
+              
+              if (isDoneSections && isDoneSections.length > 0) {
+                isDoneSections.forEach((section: string) => {
+                  const content = section.match(/extracted_content=(['"])(.*?)\1/);
+                  if (content && content[2]) {
+                    extractedContents.push(content[2]);
+                  }
+                });
+              }
             }
           }
           
