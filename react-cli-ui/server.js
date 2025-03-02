@@ -612,6 +612,9 @@ app.post('/api/run-research', async (req, res) => {
     const waitTime = useLocalBrowser ? 15000 : 12000;
     broadcastCliOutput(`Waiting ${waitTime/1000} seconds for browser to initialize...`);
     
+    // Initialize connected variable at a higher scope level to be accessible to all callbacks
+    let connected = false;
+    
     setTimeout(async () => {
       // Use the retry mechanism with exponential backoff
       const maxRetries = useLocalBrowser ? 10 : 5;

@@ -159,11 +159,11 @@ function App() {
     const apiHost = window.location.hostname;
     const apiPort = '3002'; // API server always runs on port 3002
     
-    // Always set noHeadless to true when using embedded browser
-    // unless using local browser
+    // Always set noHeadless to false to ensure headless mode
+    // unless user explicitly wants to see the browser when using local browser
     const updatedFormData = {
       ...formData,
-      noHeadless: formData.useLocalBrowser ? formData.noHeadless : true
+      noHeadless: formData.useLocalBrowser ? formData.noHeadless : false
     };
 
     try {
