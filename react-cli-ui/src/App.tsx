@@ -345,7 +345,9 @@ export default function App() {
             const formattedResults = jsonResult.all_results
               .filter((res: any) => res.extracted_content)
               .map((res: any) => res.extracted_content)
-              .join('\n');
+              .join('\n\n'); // Use double newlines for better readability
+            
+            console.log('Extracted content from JSON:', formattedResults);
             
             if (formattedResults) {
               return (
@@ -376,32 +378,50 @@ export default function App() {
             .replace(/False/g, 'false')
             .replace(/None/g, 'null');
           
-          // Extract all extracted_content values using regex
-          const extractedContentMatches = jsonStr.match(/extracted_content="([^"]+)"/g) || 
-                                         jsonStr.match(/extracted_content='([^']+)'/g);
-          if (extractedContentMatches && extractedContentMatches.length > 0) {
-            // Extract the actual content from each match and join them
-            const formattedResults = extractedContentMatches
-              .map((match: string) => {
-                const content = match.match(/extracted_content="([^"]+)"/) || 
-                               match.match(/extracted_content='([^']+)'/);
-                return content ? content[1] : '';
-              })
-              .filter(content => content) // Remove empty strings
-              .join('\n\n'); // Use double newlines for better readability
-            
-            if (formattedResults) {
-              return (
-                <div className="task-summary">
-                  <h3>Task summary</h3>
-                  <div className="formatted-content">
-                    {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
-                      <p key={index}>{paragraph}</p>
-                    ))}
-                  </div>
-                </div>
-              );
+          console.log('Attempting to extract content from:', jsonStr);
+          
+          // First try to extract using a more robust regex that can handle nested quotes
+          const extractedContentRegex = /extracted_content=(['"])((?:(?!\1).|\\.)*)\1/g;
+          let match;
+          const extractedContents = [];
+          
+          while ((match = extractedContentRegex.exec(jsonStr)) !== null) {
+            if (match[2]) {
+              extractedContents.push(match[2]);
             }
+          }
+          
+          // If the robust regex didn't work, fall back to the simpler regex
+          if (extractedContents.length === 0) {
+            const extractedContentMatches = jsonStr.match(/extracted_content="(.*?)"/g) || 
+                                           jsonStr.match(/extracted_content='(.*?)'/g);
+            if (extractedContentMatches && extractedContentMatches.length > 0) {
+              // Extract the actual content from each match
+              extractedContentMatches.forEach((match: string) => {
+                const content = match.match(/extracted_content="(.*?)"/) || 
+                               match.match(/extracted_content='(.*?)'/);
+                if (content && content[1]) {
+                  extractedContents.push(content[1]);
+                }
+              });
+            }
+          }
+          
+          console.log('Extracted contents:', extractedContents);
+          
+          if (extractedContents.length > 0) {
+            const formattedResults = extractedContents.join('\n\n'); // Use double newlines for better readability
+            
+            return (
+              <div className="task-summary">
+                <h3>Task summary</h3>
+                <div className="formatted-content">
+                  {formattedResults.split('\n\n').map((paragraph: string, index: number) => (
+                    <p key={index}>{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+            );
           }
         } catch (e) {
           console.log('Error parsing AgentHistoryList:', e);
