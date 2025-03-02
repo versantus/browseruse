@@ -200,10 +200,9 @@ async def run_research(
         import os
         is_server = os.environ.get('SERVER_ENVIRONMENT') == 'true'
         
-        # Force headless to False for embedded browser, regardless of server environment
-        # This ensures the browser is visible and can be captured by screenshots
-        headless = False
-        print("Embedded browser mode: Setting headless=False to ensure browser is visible for screenshots")
+        # Use headless mode for embedded browser
+        # This ensures the browser is hidden but can still capture screenshots
+        print(f"Embedded browser mode: Using headless={headless}")
         
         # Make sure we have the remote debugging port set
         if not any([arg.startswith('--remote-debugging-port=') for arg in chromium_args]):
@@ -213,8 +212,8 @@ async def run_research(
         if not any([arg == '--no-sandbox' for arg in chromium_args]):
             chromium_args.append('--no-sandbox')
             
-        # If running in headless mode on a server, add the necessary flags for headless mode
-        if is_server:
+        # Add headless flag if headless is True
+        if headless:
             # Use the new headless flag if not already specified
             if not any([arg.startswith('--headless=') for arg in chromium_args]):
                 chromium_args.append('--headless=new')
