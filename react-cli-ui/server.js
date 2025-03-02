@@ -435,13 +435,14 @@ app.post('/api/run-research', async (req, res) => {
   
   // Always try to connect to CDP for screenshots, whether using embedded or local browser
   if (req.body.useEmbeddedBrowser || useLocalBrowser) {
+    // Initialize connected variable at a higher scope level to be accessible to all callbacks
+    let connected = false;
+    
     // Wait a moment for the browser to start
     setTimeout(async () => {
       // For local browser, we need to wait longer and retry a few times
       const maxRetries = useLocalBrowser ? 5 : 1;
       let retryCount = 0;
-      // Initialize connected variable to track connection status
-      let connected = false;
       
       while (retryCount < maxRetries && !connected) {
         try {
