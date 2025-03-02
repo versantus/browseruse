@@ -34,7 +34,7 @@
     "prod": "npm run build && node server.js",
     "electron-dev": "concurrently \"cross-env BROWSER=none npm start\" \"wait-on http://localhost:3003 && cross-env ELECTRON_START_URL=http://localhost:3003 electron .\"",
     "electron": "electron .",
-    "electron-build": "npm run build && electron-builder",
+    "electron-build": "npm run build && electron-builder --publish=never",
     "electron-pack": "electron-builder --dir",
     "electron-dist": "electron-builder"
   },
@@ -63,6 +63,11 @@
     "files": [
       "build/**/*",
       "node_modules/**/*",
+      "main.js",
+      "preload.js",
+      "server.js"
+    ],
+    "extraFiles": [
       "main.js",
       "preload.js",
       "server.js"
