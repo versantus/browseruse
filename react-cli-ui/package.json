@@ -62,15 +62,21 @@
     "productName": "Browser Use",
     "files": [
       "build/**/*",
-      "node_modules/**/*",
-      "main.js",
-      "preload.js",
-      "server.js"
+      "node_modules/**/*"
     ],
     "extraFiles": [
-      "main.js",
-      "preload.js",
-      "server.js"
+      {
+        "from": "main.js",
+        "to": "main.js"
+      },
+      {
+        "from": "preload.js",
+        "to": "preload.js"
+      },
+      {
+        "from": "server.js",
+        "to": "server.js"
+      }
     ],
     "extraResources": [
       {
